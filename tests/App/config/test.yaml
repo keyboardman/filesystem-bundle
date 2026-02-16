@@ -1,0 +1,20 @@
+framework:
+    secret: test
+    test: true
+    router:
+        resource: '%kernel.project_dir%/config/routes.yaml'
+        type: yaml
+
+keyboardman_filesystem:
+    filesystems:
+        default:
+            adapter: keyboardman_filesystem.adapter.default
+        other:
+            adapter: keyboardman_filesystem.adapter.other
+
+services:
+    keyboardman_filesystem.adapter.default:
+        class: Gaufrette\Adapter\InMemory
+
+    keyboardman_filesystem.adapter.other:
+        class: Gaufrette\Adapter\InMemory

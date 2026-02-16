@@ -1,0 +1,8 @@
+.git
+.github
+vendor
+tests/App/var
+*.md
+.gitignore
+.dockerignore
+openspec

@@ -1,0 +1,4 @@
+keyboardman_filesystem_api:
+    resource: ../../../src/Controller/
+    type: attribute
+    prefix: /api/filesystem
