@@ -59,6 +59,47 @@ final class FileStorage
     }
 
     /**
+     * Crée un répertoire (à la racine ou dans un sous-chemin).
+     * Implémentation portable : écrit un fichier placeholder path/.keep.
+     * Idempotent : si le répertoire existe déjà (path/.keep présent), ne fait rien.
+     *
+     * @param string $path chemin du répertoire (ex. "nouveau" ou "parent/enfant")
+     *
+     * @throws \InvalidArgumentException si path est vide ou contient '..'
+     */
+    public function createDirectory(string $filesystem, string $path): void
+    {
+        $path = $this->normalizeDirectoryPath($path);
+        $placeholderKey = $path . '/.keep';
+
+        if ($this->has($filesystem, $path)) {
+            throw new \InvalidArgumentException('A file already exists at this path.');
+        }
+
+        if ($this->has($filesystem, $placeholderKey)) {
+            return;
+        }
+
+        $fs = $this->getFilesystem($filesystem);
+        $fs->write($placeholderKey, '', true);
+    }
+
+    /**
+     * @throws \InvalidArgumentException si path vide ou contient '..'
+     */
+    private function normalizeDirectoryPath(string $path): string
+    {
+        $path = trim($path, '/');
+        if ($path === '') {
+            throw new \InvalidArgumentException('Directory path cannot be empty.');
+        }
+        if (str_contains($path, '..')) {
+            throw new \InvalidArgumentException('Directory path cannot contain "..".');
+        }
+        return $path;
+    }
+
+    /**
      * Liste les clés (fichiers) du filesystem. Exclut les fichiers masqués (nom commençant par '.').
      *
      * @param string      $filesystem nom du filesystem

@@ -191,9 +191,16 @@ keyboardman_filesystem_api:
 | POST | `/api/filesystem/upload-multiple` | Upload de plusieurs fichiers (`files[]`, `filesystem`) |
 | POST | `/api/filesystem/rename` | Renommer (`filesystem`, `source`, `target`) |
 | POST | `/api/filesystem/move` | Déplacer (`filesystem`, `source`, `target`) |
+| POST | `/api/filesystem/create-directory` | Créer un dossier (`filesystem`, `path`) — à la racine ou plus loin (ex. `parent/enfant`) |
 | POST | `/api/filesystem/delete` | Supprimer (`filesystem`, `path`) |
 
 Réponses : JSON ; codes HTTP standards (200, 201, 204, 400, 404, 409).
+
+#### Route create-directory (POST)
+
+- **Paramètres** : `filesystem` (défaut : `default`), `path` (chemin du dossier, ex. `nouveau` ou `parent/sous-dossier`).
+- **Réponse** : `{ "filesystem": "...", "path": "chemin/normalise" }` (201 Created).
+- Création à la racine ou en profondeur ; le chemin ne doit pas être vide ni contenir `..`. Si un fichier existe déjà à ce chemin → 409 Conflict.
 
 #### Route list (GET)
 

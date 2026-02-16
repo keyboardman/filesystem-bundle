@@ -154,6 +154,31 @@ final class FileStorageController
         return new JsonResponse(['filesystem' => $filesystem, 'path' => $target], Response::HTTP_OK);
     }
 
+    #[Route('/create-directory', name: 'keyboardman_filesystem_create_directory', methods: ['POST'])]
+    public function createDirectory(Request $request): JsonResponse
+    {
+        $filesystem = $request->request->getString('filesystem', 'default');
+        $path = $request->request->getString('path', '');
+
+        if (!$this->fileStorage->hasFilesystem($filesystem)) {
+            return new JsonResponse(['error' => 'Unknown filesystem'], Response::HTTP_BAD_REQUEST);
+        }
+
+        try {
+            $this->fileStorage->createDirectory($filesystem, $path);
+        } catch (\InvalidArgumentException $e) {
+            $message = $e->getMessage();
+            $status = str_contains($message, 'already exists') ? Response::HTTP_CONFLICT : Response::HTTP_BAD_REQUEST;
+            return new JsonResponse(['error' => $message], $status);
+        }
+
+        $normalizedPath = trim($path, '/');
+        return new JsonResponse([
+            'filesystem' => $filesystem,
+            'path' => $normalizedPath,
+        ], Response::HTTP_CREATED);
+    }
+
     #[Route('/delete', name: 'keyboardman_filesystem_delete', methods: ['POST'])]
     public function delete(Request $request): JsonResponse
     {

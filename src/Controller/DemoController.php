@@ -35,7 +35,7 @@ final class DemoController
 </head>
 <body>
     <h1>File Storage API – Démo</h1>
-    <p>Cette page permet de tester les endpoints de l’API (upload, rename, move, delete).</p>
+    <p>Cette page permet de tester les endpoints de l’API (upload, rename, move, delete, créer un dossier).</p>
 
     <section>
         <h2>Upload (un fichier)</h2>
@@ -81,6 +81,16 @@ final class DemoController
     </section>
 
     <section>
+        <h2>Créer un dossier</h2>
+        <form id="form-create-directory">
+            <label>Filesystem <input type="text" name="filesystem" value="default" /></label>
+            <label>Chemin du dossier <input type="text" name="path" required placeholder="nouveau-dossier ou parent/enfant" /></label>
+            <button type="submit">Créer</button>
+        </form>
+        <pre id="out-create-directory"></pre>
+    </section>
+
+    <section>
         <h2>Supprimer</h2>
         <form id="form-delete">
             <label>Filesystem <input type="text" name="filesystem" value="default" /></label>
@@ -97,6 +107,7 @@ final class DemoController
             <li class="endpoint">POST {$api}/upload-multiple</li>
             <li class="endpoint">POST {$api}/rename</li>
             <li class="endpoint">POST {$api}/move</li>
+            <li class="endpoint">POST {$api}/create-directory</li>
             <li class="endpoint">POST {$api}/delete</li>
         </ul>
     </section>
@@ -121,6 +132,7 @@ final class DemoController
         document.getElementById('form-upload-multiple').onsubmit = e => { e.preventDefault(); const f = e.target; const fd = new FormData(f); fetch(api + '/upload-multiple', { method: 'POST', body: fd }).then(r => r.text()).then(t => document.getElementById('out-upload-multiple').textContent = t || '(empty)'); };
         document.getElementById('form-rename').onsubmit = e => { e.preventDefault(); postJson(api + '/rename', new FormData(e.target), 'out-rename'); };
         document.getElementById('form-move').onsubmit = e => { e.preventDefault(); postJson(api + '/move', new FormData(e.target), 'out-move'); };
+        document.getElementById('form-create-directory').onsubmit = e => { e.preventDefault(); postJson(api + '/create-directory', new FormData(e.target), 'out-create-directory'); };
         document.getElementById('form-delete').onsubmit = e => { e.preventDefault(); postJson(api + '/delete', new FormData(e.target), 'out-delete'); };
     </script>
 </body>

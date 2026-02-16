@@ -124,6 +124,96 @@ final class FileStorageApiTest extends WebTestCase
         $this->assertResponseStatusCodeSame(Response::HTTP_NOT_FOUND);
     }
 
+    public function testCreateDirectoryAtRootSuccess(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $client->request('POST', '/api/filesystem/create-directory', [
+            'filesystem' => 'default',
+            'path' => 'nouveau-dossier',
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_CREATED);
+        $json = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame('default', $json['filesystem']);
+        $this->assertSame('nouveau-dossier', $json['path']);
+        $this->assertTrue($storage->has('default', 'nouveau-dossier/.keep'));
+    }
+
+    public function testCreateDirectoryNestedSuccess(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $client->request('POST', '/api/filesystem/create-directory', [
+            'filesystem' => 'default',
+            'path' => 'parent/enfant/sous-dossier',
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_CREATED);
+        $json = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame('parent/enfant/sous-dossier', $json['path']);
+        $this->assertTrue($storage->has('default', 'parent/enfant/sous-dossier/.keep'));
+    }
+
+    public function testCreateDirectoryUnknownFilesystem(): void
+    {
+        $client = static::createClient();
+        $client->request('POST', '/api/filesystem/create-directory', [
+            'filesystem' => 'unknown',
+            'path' => 'dossier',
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_BAD_REQUEST);
+    }
+
+    public function testCreateDirectoryPathExistsAsFile(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $storage->write('default', 'existing.txt', 'content');
+        $client->request('POST', '/api/filesystem/create-directory', [
+            'filesystem' => 'default',
+            'path' => 'existing.txt',
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_CONFLICT);
+        $json = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame('A file already exists at this path.', $json['error']);
+    }
+
+    public function testCreateDirectoryEmptyPath(): void
+    {
+        $client = static::createClient();
+        $client->request('POST', '/api/filesystem/create-directory', [
+            'filesystem' => 'default',
+            'path' => '',
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_BAD_REQUEST);
+    }
+
+    public function testCreateDirectoryPathWithParentRef(): void
+    {
+        $client = static::createClient();
+        $client->request('POST', '/api/filesystem/create-directory', [
+            'filesystem' => 'default',
+            'path' => 'foo/../bar',
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_BAD_REQUEST);
+    }
+
+    public function testCreateDirectoryIdempotent(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $client->request('POST', '/api/filesystem/create-directory', [
+            'filesystem' => 'default',
+            'path' => 'idempotent-dir',
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_CREATED);
+        $client->request('POST', '/api/filesystem/create-directory', [
+            'filesystem' => 'default',
+            'path' => 'idempotent-dir',
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_CREATED);
+        $this->assertTrue($storage->has('default', 'idempotent-dir/.keep'));
+    }
+
     public function testMultiFilesystem(): void
     {
         $client = static::createClient();
