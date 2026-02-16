@@ -19,23 +19,23 @@ final class FileStorageApiTest extends WebTestCase
     public function testUploadSuccess(): void
     {
         $client = static::createClient();
-        $tmp = $this->createTempFile('hello');
+        $tmp = $this->createTempFile('hello', 'test.jpg');
         $client->request('POST', '/api/filesystem/upload', [
             'filesystem' => 'default',
-            'key' => 'test.txt',
+            'key' => 'test.jpg',
         ], [
             'file' => $tmp,
         ]);
         $this->assertResponseStatusCodeSame(Response::HTTP_CREATED);
         $json = json_decode($client->getResponse()->getContent(), true);
         $this->assertSame('default', $json['filesystem']);
-        $this->assertSame('test.txt', $json['path']);
+        $this->assertSame('test.jpg', $json['path']);
     }
 
     public function testUploadUnknownFilesystem(): void
     {
         $client = static::createClient();
-        $tmp = $this->createTempFile('x');
+        $tmp = $this->createTempFile('x', 'x.jpg');
         $client->request('POST', '/api/filesystem/upload', [
             'filesystem' => 'unknown',
         ], [
@@ -47,8 +47,8 @@ final class FileStorageApiTest extends WebTestCase
     public function testUploadMultipleSuccess(): void
     {
         $client = static::createClient();
-        $a = $this->createTempFile('a');
-        $b = $this->createTempFile('b');
+        $a = $this->createTempFile('a', 'a.png');
+        $b = $this->createTempFile('b', 'b.mp3');
         $client->request('POST', '/api/filesystem/upload-multiple', [
             'filesystem' => 'default',
         ], [
@@ -136,10 +136,151 @@ final class FileStorageApiTest extends WebTestCase
         $this->assertSame('b', $storage->read('other', 'b.txt'));
     }
 
-    private function createTempFile(string $content): UploadedFile
+    public function testListSuccess(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $storage->write('other', 'list-a.txt', 'a');
+        $storage->write('other', 'list-b.txt', 'b');
+        $client->request('GET', '/api/filesystem/list', ['filesystem' => 'other']);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $json = json_decode($client->getResponse()->getContent(), true);
+        $this->assertArrayHasKey('paths', $json);
+        $this->assertSame('other', $json['filesystem']);
+        $this->assertContains('list-a.txt', $json['paths']);
+        $this->assertContains('list-b.txt', $json['paths']);
+    }
+
+    public function testListSortedAsc(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $storage->write('other', 'list-z.txt', 'z');
+        $storage->write('other', 'list-aa.txt', 'a');
+        $client->request('GET', '/api/filesystem/list', ['filesystem' => 'other', 'sort' => 'asc']);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $json = json_decode($client->getResponse()->getContent(), true);
+        $paths = $json['paths'];
+        $posAa = array_search('list-aa.txt', $paths, true);
+        $posZ = array_search('list-z.txt', $paths, true);
+        $this->assertNotFalse($posAa);
+        $this->assertNotFalse($posZ);
+        $this->assertLessThan($posZ, $posAa, 'asc: list-aa.txt must appear before list-z.txt');
+    }
+
+    public function testListSortedDesc(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $storage->write('other', 'list-aa.txt', 'a');
+        $storage->write('other', 'list-z.txt', 'z');
+        $client->request('GET', '/api/filesystem/list', ['filesystem' => 'other', 'sort' => 'desc']);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $json = json_decode($client->getResponse()->getContent(), true);
+        $paths = $json['paths'];
+        $posAa = array_search('list-aa.txt', $paths, true);
+        $posZ = array_search('list-z.txt', $paths, true);
+        $this->assertNotFalse($posAa);
+        $this->assertNotFalse($posZ);
+        $this->assertLessThan($posAa, $posZ, 'desc: list-z.txt must appear before list-aa.txt');
+    }
+
+    public function testListFiltersByTypeImage(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $storage->write('other', 'list-photo.jpg', 'x');
+        $storage->write('other', 'list-doc.txt', 'y');
+        $client->request('GET', '/api/filesystem/list', ['filesystem' => 'other', 'type' => 'image']);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $json = json_decode($client->getResponse()->getContent(), true);
+        $this->assertContains('list-photo.jpg', $json['paths']);
+        $this->assertNotContains('list-doc.txt', $json['paths']);
+    }
+
+    public function testListExcludesHiddenFiles(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $storage->write('other', 'list-visible.txt', 'v');
+        $storage->write('other', '.list-hidden', 'h');
+        $client->request('GET', '/api/filesystem/list', ['filesystem' => 'other']);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $json = json_decode($client->getResponse()->getContent(), true);
+        $this->assertContains('list-visible.txt', $json['paths']);
+        $this->assertNotContains('.list-hidden', $json['paths']);
+    }
+
+    public function testListUnknownFilesystem(): void
+    {
+        $client = static::createClient();
+        $client->request('GET', '/api/filesystem/list', ['filesystem' => 'unknown']);
+        $this->assertResponseStatusCodeSame(Response::HTTP_BAD_REQUEST);
+    }
+
+    public function testUploadVideoAccepted(): void
+    {
+        $client = static::createClient();
+        $tmp = $this->createTempFile('fake-video-content', 'clip.mp4');
+        $client->request('POST', '/api/filesystem/upload', [
+            'filesystem' => 'default',
+        ], [
+            'file' => $tmp,
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_CREATED);
+        $json = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame('clip.mp4', $json['path']);
+    }
+
+    public function testUploadFileTypeNotAllowed(): void
+    {
+        $client = static::createClient();
+        $tmp = $this->createTempFile('content', 'script.php');
+        $client->request('POST', '/api/filesystem/upload', [
+            'filesystem' => 'default',
+        ], [
+            'file' => $tmp,
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_BAD_REQUEST);
+        $json = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame('File type not allowed', $json['error']);
+    }
+
+    public function testUploadFileSizeExceedsLimit(): void
+    {
+        $client = static::createClient();
+        // Test config sets max_upload_size: 100
+        $largeContent = str_repeat('x', 200);
+        $tmp = $this->createTempFile($largeContent, 'large.jpg');
+        $client->request('POST', '/api/filesystem/upload', [
+            'filesystem' => 'default',
+        ], [
+            'file' => $tmp,
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_BAD_REQUEST);
+        $json = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame('File size exceeds limit', $json['error']);
+    }
+
+    public function testUploadMultipleWithInvalidFileRejectsEntireRequest(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $valid = $this->createTempFile('a', 'valid.png');
+        $invalid = $this->createTempFile('b', 'invalid.exe');
+        $client->request('POST', '/api/filesystem/upload-multiple', [
+            'filesystem' => 'default',
+        ], [
+            'files' => [$valid, $invalid],
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_BAD_REQUEST);
+        $this->assertFalse($storage->has('default', 'valid.png'));
+    }
+
+    private function createTempFile(string $content, ?string $originalName = null): UploadedFile
     {
         $path = tempnam(sys_get_temp_dir(), 'luc_fs');
         file_put_contents($path, $content);
-        return new UploadedFile($path, basename($path), null, \UPLOAD_ERR_OK, true);
+        return new UploadedFile($path, $originalName ?? basename($path), null, \UPLOAD_ERR_OK, true);
     }
 }

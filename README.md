@@ -129,6 +129,21 @@ services:
 
 Options utiles pour `Ftp` : `port`, `username`, `password`, `passive`, `create` (créer les répertoires si besoin), `ssl` (connexion FTPS), `timeout`, `utf8`.
 
+### Restrictions d’upload (api)
+
+Par défaut, l’API n’accepte que les fichiers **audio**, **vidéo** et **image** (validation par extension), et applique une **taille maximale par fichier** (10 MiB par défaut).
+
+```yaml
+keyboardman_filesystem:
+    api:
+        allowed_types: ['image', 'audio', 'video']   # optionnel, défaut : image, audio, video
+        max_upload_size: 10_485_760                   # bytes, ou notation : 10M, 50M
+```
+
+- **allowed_types** : types autorisés (`image`, `audio`, `video`). Extensions alignées avec le filtrage de la route list.
+- **max_upload_size** : taille max en bytes, ou en notation lisible (`10M`, `50M`, `1G`).
+- En cas de non-conformité, l’API retourne **400** avec `{"error": "File type not allowed"}` ou `{"error": "File size exceeds limit"}`.
+
 ### Option cache (pattern Gaufrette)
 
 Pour un filesystem lent (ex. FTP), vous pouvez activer le **cache** en utilisant le mécanisme Gaufrette : un adapter de **cache** + un adapter **source**. Voir [Gaufrette – Caching](https://knplabs.github.io/Gaufrette/caching.html).
@@ -171,13 +186,25 @@ keyboardman_filesystem_api:
 
 | Méthode | Chemin | Description |
 |--------|--------|-------------|
+| GET | `/api/filesystem/list` | Lister les fichiers (`filesystem`, optionnel `type`, optionnel `sort`) |
 | POST | `/api/filesystem/upload` | Upload d’un fichier (`file`, `filesystem`, optionnel `key`) |
 | POST | `/api/filesystem/upload-multiple` | Upload de plusieurs fichiers (`files[]`, `filesystem`) |
 | POST | `/api/filesystem/rename` | Renommer (`filesystem`, `source`, `target`) |
 | POST | `/api/filesystem/move` | Déplacer (`filesystem`, `source`, `target`) |
 | POST | `/api/filesystem/delete` | Supprimer (`filesystem`, `path`) |
 
-Réponses : JSON ; codes HTTP standards (201, 204, 400, 404, 409).
+Réponses : JSON ; codes HTTP standards (200, 201, 204, 400, 404, 409).
+
+#### Route list (GET)
+
+- **Paramètres** : `filesystem` (défaut : `default`), `type` (optionnel : `audio`, `video`, `image`), `sort` (optionnel : `asc`, `desc`).
+- **Réponse** : `{ "filesystem": "...", "paths": ["chemin1", "chemin2", ...] }`.
+- Les **fichiers masqués** (nom commençant par `.`) ne sont jamais inclus.
+- **Types par extension** :  
+  - `image` : jpg, jpeg, png, gif, webp, svg, bmp, ico  
+  - `audio` : mp3, wav, ogg, m4a, aac, flac  
+  - `video` : mp4, webm, avi, mov, mkv, m4v  
+- **Exemple** : `GET /api/filesystem/list?filesystem=default&type=image&sort=asc`
 
 ### Page de démonstration
 

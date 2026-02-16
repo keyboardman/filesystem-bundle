@@ -8,6 +8,16 @@ use Gaufrette\FilesystemMapInterface;
 
 final class FileStorage
 {
+    /** Fichier masqué : segment de chemin (ex. nom de fichier) commençant par '.' */
+    private const HIDDEN_PREFIX = '.';
+
+    /** Extensions par type de média (lowercase). Voir README pour la liste complète. */
+    private const TYPE_EXTENSIONS = [
+        'image' => ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'],
+        'audio' => ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'],
+        'video' => ['mp4', 'webm', 'avi', 'mov', 'mkv', 'm4v'],
+    ];
+
     public function __construct(
         private readonly FilesystemMapInterface $filesystemMap,
     ) {
@@ -46,6 +56,58 @@ final class FileStorage
     {
         $fs = $this->getFilesystem($filesystem);
         $fs->delete($key);
+    }
+
+    /**
+     * Liste les clés (fichiers) du filesystem. Exclut les fichiers masqués (nom commençant par '.').
+     *
+     * @param string      $filesystem nom du filesystem
+     * @param string|null $type       filtre optionnel : 'image', 'audio' ou 'video' (par extension)
+     * @param string|null $sort       tri optionnel : 'asc' ou 'desc' (par nom de clé)
+     *
+     * @return list<string>
+     *
+     * @throws \InvalidArgumentException if filesystem does not exist
+     */
+    public function list(string $filesystem, ?string $type = null, ?string $sort = null): array
+    {
+        $fs = $this->getFilesystem($filesystem);
+        $result = $fs->listKeys('');
+        $keys = $result['keys'] ?? [];
+
+        $keys = array_filter($keys, fn (string $key): bool => !$this->isHidden($key));
+
+        if ($type !== null && $type !== '') {
+            $extensions = self::TYPE_EXTENSIONS[$type] ?? null;
+            if ($extensions !== null) {
+                $keys = array_filter($keys, fn (string $key): bool => $this->matchesType($key, $extensions));
+            }
+        }
+
+        $keys = array_values($keys);
+
+        if ($sort === 'desc') {
+            rsort($keys, \SORT_STRING);
+        } else {
+            sort($keys, \SORT_STRING);
+        }
+
+        return $keys;
+    }
+
+    private function isHidden(string $key): bool
+    {
+        $basename = basename($key);
+        return $basename !== '' && str_starts_with($basename, self::HIDDEN_PREFIX);
+    }
+
+    /**
+     * @param list<string> $extensions
+     */
+    private function matchesType(string $key, array $extensions): bool
+    {
+        $ext = strtolower(pathinfo($key, \PATHINFO_EXTENSION));
+        return $ext !== '' && \in_array($ext, $extensions, true);
     }
 
     /**

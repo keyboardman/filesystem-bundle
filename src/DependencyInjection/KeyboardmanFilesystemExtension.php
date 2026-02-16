@@ -7,6 +7,7 @@ namespace Keyboardman\FilesystemBundle\DependencyInjection;
 use Gaufrette\Filesystem;
 use Gaufrette\FilesystemMap;
 use Keyboardman\FilesystemBundle\Service\FileStorage;
+use Keyboardman\FilesystemBundle\Service\UploadValidator;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
@@ -42,6 +43,14 @@ final class KeyboardmanFilesystemExtension extends Extension
         ]);
         $storageDef->setPublic(true);
         $container->setDefinition(FileStorage::class, $storageDef);
+
+        $apiConfig = $config['api'] ?? ['allowed_types' => ['image', 'audio', 'video'], 'max_upload_size' => 10_485_760];
+        $validatorDef = new Definition(UploadValidator::class, [
+            $apiConfig['allowed_types'],
+            $apiConfig['max_upload_size'],
+        ]);
+        $validatorDef->setPublic(false);
+        $container->setDefinition(UploadValidator::class, $validatorDef);
 
         $loader = new YamlFileLoader($container, new FileLocator(__DIR__ . '/../Resources/config'));
         $loader->load('services.yaml');

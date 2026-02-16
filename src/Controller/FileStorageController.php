@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Keyboardman\FilesystemBundle\Controller;
 
 use Keyboardman\FilesystemBundle\Service\FileStorage;
+use Keyboardman\FilesystemBundle\Service\UploadValidator;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -14,6 +15,7 @@ final class FileStorageController
 {
     public function __construct(
         private readonly FileStorage $fileStorage,
+        private readonly UploadValidator $uploadValidator,
     ) {
     }
 
@@ -30,6 +32,11 @@ final class FileStorageController
         $file = $request->files->get('file');
         if (!$file || !$file->isValid()) {
             return new JsonResponse(['error' => 'No valid file provided'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $error = $this->uploadValidator->validate($file);
+        if ($error !== null) {
+            return new JsonResponse(['error' => $error], Response::HTTP_BAD_REQUEST);
         }
 
         $content = file_get_contents($file->getRealPath());
@@ -72,11 +79,18 @@ final class FileStorageController
             return new JsonResponse(['error' => 'No files provided'], Response::HTTP_BAD_REQUEST);
         }
 
-        $paths = [];
         foreach ($files as $file) {
             if (!$file || !$file->isValid()) {
-                continue;
+                return new JsonResponse(['error' => 'No valid file provided'], Response::HTTP_BAD_REQUEST);
             }
+            $error = $this->uploadValidator->validate($file);
+            if ($error !== null) {
+                return new JsonResponse(['error' => $error], Response::HTTP_BAD_REQUEST);
+            }
+        }
+
+        $paths = [];
+        foreach ($files as $file) {
             $content = file_get_contents($file->getRealPath());
             if ($content === false) {
                 continue;
@@ -158,5 +172,27 @@ final class FileStorageController
 
         $this->fileStorage->delete($filesystem, $path);
         return new JsonResponse(null, Response::HTTP_NO_CONTENT);
+    }
+
+    #[Route('/list', name: 'keyboardman_filesystem_list', methods: ['GET'])]
+    public function list(Request $request): JsonResponse
+    {
+        $filesystem = $request->query->getString('filesystem', 'default');
+        $type = $request->query->get('type');
+        $sort = $request->query->get('sort');
+
+        if (!$this->fileStorage->hasFilesystem($filesystem)) {
+            return new JsonResponse(['error' => 'Unknown filesystem'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $typeParam = \is_string($type) && $type !== '' ? $type : null;
+        $sortParam = \is_string($sort) && ($sort === 'asc' || $sort === 'desc') ? $sort : null;
+
+        $paths = $this->fileStorage->list($filesystem, $typeParam, $sortParam);
+
+        return new JsonResponse([
+            'filesystem' => $filesystem,
+            'paths' => $paths,
+        ], Response::HTTP_OK);
     }
 }
