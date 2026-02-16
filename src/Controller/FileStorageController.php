@@ -191,11 +191,20 @@ final class FileStorageController
         if (!$this->fileStorage->hasFilesystem($filesystem)) {
             return new JsonResponse(['error' => 'Unknown filesystem'], Response::HTTP_BAD_REQUEST);
         }
-        if (!$this->fileStorage->has($filesystem, $path)) {
-            return new JsonResponse(['error' => 'File not found'], Response::HTTP_NOT_FOUND);
+
+        try {
+            $this->fileStorage->delete($filesystem, $path);
+        } catch (\InvalidArgumentException $e) {
+            $msg = $e->getMessage();
+            if ($msg === 'File or directory not found.') {
+                return new JsonResponse(['error' => 'File or directory not found'], Response::HTTP_NOT_FOUND);
+            }
+            if ($msg === 'Directory is not empty.') {
+                return new JsonResponse(['error' => 'Directory is not empty'], Response::HTTP_CONFLICT);
+            }
+            return new JsonResponse(['error' => $msg], Response::HTTP_BAD_REQUEST);
         }
 
-        $this->fileStorage->delete($filesystem, $path);
         return new JsonResponse(null, Response::HTTP_NO_CONTENT);
     }
 
@@ -205,6 +214,7 @@ final class FileStorageController
         $filesystem = $request->query->getString('filesystem', 'default');
         $type = $request->query->get('type');
         $sort = $request->query->get('sort');
+        $path = $request->query->get('path');
 
         if (!$this->fileStorage->hasFilesystem($filesystem)) {
             return new JsonResponse(['error' => 'Unknown filesystem'], Response::HTTP_BAD_REQUEST);
@@ -212,8 +222,13 @@ final class FileStorageController
 
         $typeParam = \is_string($type) && $type !== '' ? $type : null;
         $sortParam = \is_string($sort) && ($sort === 'asc' || $sort === 'desc') ? $sort : null;
+        $pathParam = \is_string($path) ? $path : null;
 
-        $paths = $this->fileStorage->list($filesystem, $typeParam, $sortParam);
+        try {
+            $paths = $this->fileStorage->list($filesystem, $typeParam, $sortParam, $pathParam);
+        } catch (\InvalidArgumentException $e) {
+            return new JsonResponse(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
+        }
 
         return new JsonResponse([
             'filesystem' => $filesystem,

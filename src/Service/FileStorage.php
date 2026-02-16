@@ -53,10 +53,42 @@ final class FileStorage
         $fs->rename($sourceKey, $targetKey);
     }
 
+    /**
+     * Supprime un fichier ou un répertoire (créé via createDirectory).
+     * Un répertoire n'est supprimable que s'il est vide (aucun fichier ni sous-dossier).
+     *
+     * @throws \InvalidArgumentException si path vide, contient '..', répertoire non vide, ou ressource introuvable
+     */
     public function delete(string $filesystem, string $key): void
     {
+        $key = trim($key, '/');
+        if ($key === '') {
+            throw new \InvalidArgumentException('Path cannot be empty.');
+        }
+        if (str_contains($key, '..')) {
+            throw new \InvalidArgumentException('Path cannot contain "..".');
+        }
+
         $fs = $this->getFilesystem($filesystem);
-        $fs->delete($key);
+
+        if ($this->has($filesystem, $key)) {
+            $fs->delete($key);
+            return;
+        }
+
+        $keepKey = $key . '/.keep';
+        if ($this->has($filesystem, $keepKey)) {
+            $result = $fs->listKeys($key . '/');
+            $keys = $result['keys'] ?? [];
+            $otherKeys = array_filter($keys, fn (string $k): bool => $k !== $keepKey);
+            if ($otherKeys !== []) {
+                throw new \InvalidArgumentException('Directory is not empty.');
+            }
+            $fs->delete($keepKey);
+            return;
+        }
+
+        throw new \InvalidArgumentException('File or directory not found.');
     }
 
     /**
@@ -101,21 +133,28 @@ final class FileStorage
     }
 
     /**
-     * Liste les clés (fichiers) du filesystem. Exclut les fichiers masqués (nom commençant par '.').
+     * Liste uniquement les fichiers et dossiers du répertoire courant (un niveau, pas de sous-dossiers).
+     * Exclut les fichiers masqués (nom commençant par '.').
      *
      * @param string      $filesystem nom du filesystem
      * @param string|null $type       filtre optionnel : 'image', 'audio' ou 'video' (par extension)
      * @param string|null $sort       tri optionnel : 'asc' ou 'desc' (par nom de clé)
+     * @param string|null $path       répertoire à lister (vide ou null = racine), ex. "subdir" ou "parent/enfant"
      *
-     * @return list<string>
+     * @return list<string> clés (fichiers ou dossiers avec slash final)
      *
-     * @throws \InvalidArgumentException if filesystem does not exist
+     * @throws \InvalidArgumentException if filesystem does not exist or path contains '..'
      */
-    public function list(string $filesystem, ?string $type = null, ?string $sort = null): array
+    public function list(string $filesystem, ?string $type = null, ?string $sort = null, ?string $path = null): array
     {
+        $path = $path !== null && $path !== '' ? $this->normalizeListPath($path) : '';
+
         $fs = $this->getFilesystem($filesystem);
-        $result = $fs->listKeys('');
+        $prefix = $path === '' ? '' : $path . '/';
+        $result = $fs->listKeys($prefix);
         $keys = $result['keys'] ?? [];
+
+        $keys = array_filter($keys, fn (string $key): bool => $this->isDirectChild($key, $path));
 
         $dirPlaceholders = [];
         $keys = array_filter($keys, function (string $key) use (&$dirPlaceholders): bool {
@@ -143,6 +182,40 @@ final class FileStorage
         }
 
         return $keys;
+    }
+
+    /**
+     * True si la clé est un enfant direct du répertoire (un seul niveau, pas de récursion).
+     */
+    private function isDirectChild(string $key, string $directory): bool
+    {
+        if ($directory === '') {
+            if (str_contains($key, '/')) {
+                return str_ends_with($key, '/.keep') && substr_count($key, '/') === 1;
+            }
+            return true;
+        }
+        $prefix = $directory . '/';
+        if (!str_starts_with($key, $prefix)) {
+            return false;
+        }
+        $remainder = substr($key, \strlen($prefix));
+        if ($remainder === '' || str_contains($remainder, '/')) {
+            return $remainder !== '' && str_ends_with($key, '/.keep') && substr_count($remainder, '/') === 1;
+        }
+        return true;
+    }
+
+    /**
+     * @throws \InvalidArgumentException si path contient '..'
+     */
+    private function normalizeListPath(string $path): string
+    {
+        $path = trim($path, '/');
+        if (str_contains($path, '..')) {
+            throw new \InvalidArgumentException('Path cannot contain "..".');
+        }
+        return $path;
     }
 
     private function isHidden(string $key): bool

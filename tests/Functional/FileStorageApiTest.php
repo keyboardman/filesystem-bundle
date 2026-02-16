@@ -124,6 +124,36 @@ final class FileStorageApiTest extends WebTestCase
         $this->assertResponseStatusCodeSame(Response::HTTP_NOT_FOUND);
     }
 
+    public function testDeleteEmptyDirectorySuccess(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $storage->createDirectory('default', 'empty-dir');
+        $this->assertTrue($storage->has('default', 'empty-dir/.keep'));
+        $client->request('POST', '/api/filesystem/delete', [
+            'filesystem' => 'default',
+            'path' => 'empty-dir',
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_NO_CONTENT);
+        $this->assertFalse($storage->has('default', 'empty-dir/.keep'));
+    }
+
+    public function testDeleteNonEmptyDirectoryReturnsConflict(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $storage->createDirectory('default', 'filled-dir');
+        $storage->write('default', 'filled-dir/file.txt', 'content');
+        $client->request('POST', '/api/filesystem/delete', [
+            'filesystem' => 'default',
+            'path' => 'filled-dir',
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_CONFLICT);
+        $json = json_decode($client->getResponse()->getContent(), true);
+        $this->assertSame('Directory is not empty', $json['error']);
+        $this->assertTrue($storage->has('default', 'filled-dir/.keep'));
+    }
+
     public function testCreateDirectoryAtRootSuccess(): void
     {
         $client = static::createClient();
@@ -306,6 +336,38 @@ final class FileStorageApiTest extends WebTestCase
         $client = static::createClient();
         $client->request('GET', '/api/filesystem/list', ['filesystem' => 'unknown']);
         $this->assertResponseStatusCodeSame(Response::HTTP_BAD_REQUEST);
+    }
+
+    public function testListOnlyCurrentDirectoryNotSubdirectories(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $storage->write('other', 'root-only.txt', 'a');
+        $storage->write('other', 'subdir/nested.txt', 'b');
+        $storage->write('other', 'subdir/deep/inside.txt', 'c');
+        $client->request('GET', '/api/filesystem/list', ['filesystem' => 'other']);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $json = json_decode($client->getResponse()->getContent(), true);
+        $this->assertContains('root-only.txt', $json['paths']);
+        $this->assertNotContains('subdir/nested.txt', $json['paths'], 'Files in subdir must not be listed at root');
+        $this->assertNotContains('subdir/deep/inside.txt', $json['paths']);
+    }
+
+    public function testListWithPathReturnsOnlyThatDirectory(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $storage->write('other', 'folder/a.jpg', 'a');
+        $storage->write('other', 'folder/b.png', 'b');
+        $storage->write('other', 'folder/sub/.keep', '');
+        $storage->write('other', 'folder/sub/other.txt', 'x');
+        $client->request('GET', '/api/filesystem/list', ['filesystem' => 'other', 'path' => 'folder']);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $json = json_decode($client->getResponse()->getContent(), true);
+        $this->assertContains('folder/a.jpg', $json['paths']);
+        $this->assertContains('folder/b.png', $json['paths']);
+        $this->assertContains('folder/sub/', $json['paths']);
+        $this->assertNotContains('folder/sub/other.txt', $json['paths'], 'Nested file must not be in listing');
     }
 
     public function testUploadVideoAccepted(): void

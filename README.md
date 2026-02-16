@@ -186,15 +186,21 @@ keyboardman_filesystem_api:
 
 | Méthode | Chemin | Description |
 |--------|--------|-------------|
-| GET | `/api/filesystem/list` | Lister les fichiers (`filesystem`, optionnel `type`, optionnel `sort`) |
+| GET | `/api/filesystem/list` | Lister fichiers et dossiers du répertoire courant uniquement (`filesystem`, optionnel `path`, `type`, `sort`) |
 | POST | `/api/filesystem/upload` | Upload d’un fichier (`file`, `filesystem`, optionnel `key`) |
 | POST | `/api/filesystem/upload-multiple` | Upload de plusieurs fichiers (`files[]`, `filesystem`) |
 | POST | `/api/filesystem/rename` | Renommer (`filesystem`, `source`, `target`) |
 | POST | `/api/filesystem/move` | Déplacer (`filesystem`, `source`, `target`) |
 | POST | `/api/filesystem/create-directory` | Créer un dossier (`filesystem`, `path`) — à la racine ou plus loin (ex. `parent/enfant`) |
-| POST | `/api/filesystem/delete` | Supprimer (`filesystem`, `path`) |
+| POST | `/api/filesystem/delete` | Supprimer un fichier ou un dossier vide (`filesystem`, `path`) |
 
 Réponses : JSON ; codes HTTP standards (200, 201, 204, 400, 404, 409).
+
+#### Route delete (POST)
+
+- **Paramètres** : `filesystem` (défaut : `default`), `path` (fichier ou dossier à supprimer).
+- Supprime un **fichier** ou un **dossier** (créé via create-directory). Un dossier n’est supprimable que s’il est **vide** (aucun fichier ni sous-dossier).
+- **204** No Content en cas de succès. **404** si fichier ou dossier introuvable. **409** Conflict si le dossier n’est pas vide (`{"error": "Directory is not empty"}`).
 
 #### Route create-directory (POST)
 
@@ -204,14 +210,15 @@ Réponses : JSON ; codes HTTP standards (200, 201, 204, 400, 404, 409).
 
 #### Route list (GET)
 
-- **Paramètres** : `filesystem` (défaut : `default`), `type` (optionnel : `audio`, `video`, `image`), `sort` (optionnel : `asc`, `desc`).
+- **Paramètres** : `filesystem` (défaut : `default`), `path` (optionnel : répertoire à lister, vide = racine), `type` (optionnel : `audio`, `video`, `image`), `sort` (optionnel : `asc`, `desc`).
 - **Réponse** : `{ "filesystem": "...", "paths": ["chemin1", "chemin2", ...] }`.
+- **Un seul niveau** : seuls les fichiers et dossiers **directs** du répertoire demandé sont retournés (pas de listing récursif des sous-dossiers), pour de meilleures performances.
 - Les **fichiers masqués** (nom commençant par `.`) ne sont jamais inclus.
 - **Types par extension** :  
   - `image` : jpg, jpeg, png, gif, webp, svg, bmp, ico  
   - `audio` : mp3, wav, ogg, m4a, aac, flac  
   - `video` : mp4, webm, avi, mov, mkv, m4v  
-- **Exemple** : `GET /api/filesystem/list?filesystem=default&type=image&sort=asc`
+- **Exemples** : `GET /api/filesystem/list?filesystem=default`, `GET /api/filesystem/list?filesystem=default&path=documents&type=image&sort=asc`
 
 ### Page de démonstration
 
