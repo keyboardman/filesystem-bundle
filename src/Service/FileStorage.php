@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Keyboardman\FilesystemBundle\Service;
 
-use Gaufrette\FilesystemMapInterface;
-
 final class FileStorage
 {
     /** Fichier masqué : segment de chemin (ex. nom de fichier) commençant par '.' */
@@ -18,8 +16,11 @@ final class FileStorage
         'video' => ['mp4', 'webm', 'avi', 'mov', 'mkv', 'm4v'],
     ];
 
+    /**
+     * @param object $filesystemMap Gaufrette\FilesystemMapInterface (has(string), get(string))
+     */
     public function __construct(
-        private readonly FilesystemMapInterface $filesystemMap,
+        private readonly object $filesystemMap,
     ) {
     }
 
@@ -116,12 +117,20 @@ final class FileStorage
         $result = $fs->listKeys('');
         $keys = $result['keys'] ?? [];
 
-        $keys = array_filter($keys, fn (string $key): bool => !$this->isHidden($key));
+        $dirPlaceholders = [];
+        $keys = array_filter($keys, function (string $key) use (&$dirPlaceholders): bool {
+            if (str_ends_with($key, '/.keep')) {
+                $dirPlaceholders[] = substr($key, 0, -\strlen('/.keep')) . '/';
+                return false;
+            }
+            return !$this->isHidden($key);
+        });
+        $keys = array_merge(array_values($keys), $dirPlaceholders);
 
         if ($type !== null && $type !== '') {
             $extensions = self::TYPE_EXTENSIONS[$type] ?? null;
             if ($extensions !== null) {
-                $keys = array_filter($keys, fn (string $key): bool => $this->matchesType($key, $extensions));
+                $keys = array_filter($keys, fn (string $key): bool => str_ends_with($key, '/') || $this->matchesType($key, $extensions));
             }
         }
 
@@ -152,9 +161,10 @@ final class FileStorage
     }
 
     /**
+     * @return object Filesystem instance (Gaufrette\FilesystemInterface)
      * @throws \InvalidArgumentException if filesystem does not exist
      */
-    private function getFilesystem(string $name): \Gaufrette\FilesystemInterface
+    private function getFilesystem(string $name): object
     {
         if (!$this->filesystemMap->has($name)) {
             throw new \InvalidArgumentException(sprintf('There is no filesystem defined having "%s" name.', $name));
