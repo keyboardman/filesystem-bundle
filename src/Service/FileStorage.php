@@ -132,6 +132,12 @@ final class FileStorage
             $this->ensureParentDirectory($fs, $targetPath);
             $fs->move($path, $targetPath);
         }
+
+        // Supprimer le fichier .keep du répertoire source après avoir déplacé tout le contenu
+        $sourceKeepKey = $sourceKey . '/.keep';
+        if ($this->has($filesystem, $sourceKeepKey)) {
+            $fs->delete($sourceKeepKey);
+        }
     }
 
     /**
