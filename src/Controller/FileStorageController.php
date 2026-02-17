@@ -299,13 +299,16 @@ final class FileStorageController
         $pathParam = \is_string($path) ? $path : null;
 
         try {
-            $paths = $this->fileStorage->list($filesystem, $typeParam, $sortParam, $pathParam);
+            $items = $this->fileStorage->list($filesystem, $typeParam, $sortParam, $pathParam);
         } catch (\InvalidArgumentException $e) {
             return new JsonResponse(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
         }
 
+        $paths = array_map(fn (array $item): string => $item['path'], $items);
+
         return new JsonResponse([
             'filesystem' => $filesystem,
+            'items' => $items,
             'paths' => $paths,
         ], Response::HTTP_OK);
     }

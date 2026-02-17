@@ -371,10 +371,20 @@ final class FileStorageApiTest extends WebTestCase
         $client->request('GET', '/api/filesystem/list', ['filesystem' => 'other']);
         $this->assertResponseStatusCodeSame(Response::HTTP_OK);
         $json = json_decode($client->getResponse()->getContent(), true);
+        $this->assertArrayHasKey('items', $json);
         $this->assertArrayHasKey('paths', $json);
         $this->assertSame('other', $json['filesystem']);
         $this->assertContains('list-a.txt', $json['paths']);
         $this->assertContains('list-b.txt', $json['paths']);
+        foreach ($json['items'] as $item) {
+            $this->assertArrayHasKey('path', $item);
+            $this->assertArrayHasKey('type', $item);
+            if ($item['type'] === 'file') {
+                $this->assertArrayHasKey('mimeType', $item);
+                $this->assertArrayHasKey('size', $item);
+                $this->assertIsInt($item['size']);
+            }
+        }
     }
 
     public function testListSortedAsc(): void
@@ -392,6 +402,8 @@ final class FileStorageApiTest extends WebTestCase
         $this->assertNotFalse($posAa);
         $this->assertNotFalse($posZ);
         $this->assertLessThan($posZ, $posAa, 'asc: list-aa.txt must appear before list-z.txt');
+        $this->assertSame($json['items'][$posAa]['path'], 'list-aa.txt');
+        $this->assertSame($json['items'][$posZ]['path'], 'list-z.txt');
     }
 
     public function testListSortedDesc(): void
@@ -422,6 +434,30 @@ final class FileStorageApiTest extends WebTestCase
         $json = json_decode($client->getResponse()->getContent(), true);
         $this->assertContains('list-photo.jpg', $json['paths']);
         $this->assertNotContains('list-doc.txt', $json['paths']);
+    }
+
+    public function testListFileEntryHasMimeTypeAndSize(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $content = 'binary image content';
+        $storage->write('other', 'list-photo.jpg', $content);
+        $client->request('GET', '/api/filesystem/list', ['filesystem' => 'other']);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $json = json_decode($client->getResponse()->getContent(), true);
+        $photoItem = null;
+        foreach ($json['items'] as $item) {
+            if ($item['path'] === 'list-photo.jpg') {
+                $photoItem = $item;
+                break;
+            }
+        }
+        $this->assertNotNull($photoItem, 'list-photo.jpg must be in items');
+        $this->assertSame('file', $photoItem['type']);
+        $this->assertArrayHasKey('mimeType', $photoItem);
+        $this->assertArrayHasKey('size', $photoItem);
+        $this->assertSame(\strlen($content), $photoItem['size']);
+        $this->assertTrue($photoItem['mimeType'] === null || \is_string($photoItem['mimeType']), 'mimeType must be string or null');
     }
 
     public function testListExcludesHiddenFiles(): void

@@ -144,6 +144,10 @@ final class DemoController
         .file-item.directory {
             font-weight: 500;
         }
+        .file-item .file-meta {
+            color: #666;
+            font-size: 0.9em;
+        }
         .file-item .actions {
             display: flex;
             gap: 8px;
@@ -251,6 +255,25 @@ final class DemoController
                     <input type="text" id="listPath" placeholder="ex: mes-fichiers" style="flex: 1; min-width: 200px;">
                     <button onclick="loadFileList()">Actualiser</button>
                     <button type="button" class="root-link" onclick="document.getElementById('listPath').value=''; loadFileList();" style="background: #95a5a6;">Racine</button>
+                </div>
+            </div>
+            <div class="form-group" style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-top: 12px;">
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <label for="listFilterType" style="margin: 0; white-space: nowrap;">Filtrer par type:</label>
+                    <select id="listFilterType" onchange="loadFileList()" style="padding: 6px 12px; border-radius: 4px; border: 1px solid #ddd;">
+                        <option value="">Tous</option>
+                        <option value="image">Images</option>
+                        <option value="audio">Audio</option>
+                        <option value="video">Vidéo</option>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <label for="listSort" style="margin: 0; white-space: nowrap;">Trier:</label>
+                    <select id="listSort" onchange="loadFileList()" style="padding: 6px 12px; border-radius: 4px; border: 1px solid #ddd;">
+                        <option value="">Par défaut</option>
+                        <option value="asc">A-Z</option>
+                        <option value="desc">Z-A</option>
+                    </select>
                 </div>
             </div>
             <div id="fileList" class="file-list"></div>
@@ -386,27 +409,45 @@ final class DemoController
             try {
                 const params = new URLSearchParams({ filesystem: FILESYSTEM });
                 if (path) params.append('path', path);
+                const filterType = document.getElementById('listFilterType');
+                if (filterType && filterType.value) {
+                    params.append('type', filterType.value);
+                }
+                const sort = document.getElementById('listSort');
+                if (sort && sort.value) {
+                    params.append('sort', sort.value);
+                }
                 const data = await apiCall(`/list?${params.toString()}`);
-                if (!data.paths || data.paths.length === 0) {
+                const items = data.items || [];
+                if (items.length === 0) {
                     fileList.innerHTML = '<p style="color: #666;">Aucun fichier ou dossier.</p>';
                     return;
                 }
                 const pathForAttr = (s) => String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                fileList.innerHTML = data.paths.map(item => {
-                    const isDirectory = item.endsWith('/');
-                    const displayName = isDirectory ? item.slice(0, -1) : item;
+                const formatSize = (bytes) => bytes == null ? '' : (bytes < 1024 ? bytes + ' o' : (bytes < 1024*1024 ? (bytes/1024).toFixed(1) + ' Ko' : (bytes/1024/1024).toFixed(1) + ' Mo'));
+                fileList.innerHTML = items.map(item => {
+                    const isDirectory = item.type === 'dir';
+                    const pathStr = item.path;
+                    const displayName = isDirectory ? pathStr.replace(/\/$/, '') : pathStr;
                     const itemClass = isDirectory ? 'file-item directory' : 'file-item';
                     const dirPath = isDirectory ? (path ? path + '/' + displayName : displayName) : '';
                     const openBtn = isDirectory
                         ? `<button class="open" onclick="openDirectory('${pathForAttr(dirPath)}')">Ouvrir</button>`
                         : '';
+                    const metaParts = [];
+                    if (!isDirectory) {
+                        if (item.mimeType) metaParts.push(escapeHtml(item.mimeType));
+                        if (item.size != null) metaParts.push(formatSize(item.size));
+                    }
+                    const meta = metaParts.length ? `<span class="file-meta">${metaParts.join(' · ')}</span>` : '';
                     return `
                         <div class="${itemClass}">
                             <span>${isDirectory ? '📁' : '📄'} ${escapeHtml(displayName)}</span>
+                            ${meta}
                             <div class="actions">
                                 ${openBtn}
-                                <button class="rename" onclick="showRenameDialog('${pathForAttr(item)}')">Renommer</button>
-                                <button class="delete" onclick="deleteItem('${pathForAttr(item)}')">Supprimer</button>
+                                <button class="rename" onclick="showRenameDialog('${pathForAttr(pathStr)}')">Renommer</button>
+                                <button class="delete" onclick="deleteItem('${pathForAttr(pathStr)}')">Supprimer</button>
                             </div>
                         </div>
                     `;

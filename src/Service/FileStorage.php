@@ -22,6 +22,17 @@ final class FileStorage
         'video' => ['mp4', 'webm', 'avi', 'mov', 'mkv', 'm4v'],
     ];
 
+    /** Extension → type MIME (fallback quand l’adapter ne fournit pas mimeType). */
+    private const EXTENSION_MIME = [
+        'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'gif' => 'image/gif',
+        'webp' => 'image/webp', 'svg' => 'image/svg+xml', 'bmp' => 'image/bmp', 'ico' => 'image/x-icon',
+        'mp3' => 'audio/mpeg', 'wav' => 'audio/wav', 'ogg' => 'audio/ogg', 'm4a' => 'audio/mp4',
+        'aac' => 'audio/aac', 'flac' => 'audio/flac',
+        'mp4' => 'video/mp4', 'webm' => 'video/webm', 'avi' => 'video/x-msvideo', 'mov' => 'video/quicktime',
+        'mkv' => 'video/x-matroska', 'm4v' => 'video/x-m4v',
+        'txt' => 'text/plain', 'json' => 'application/json', 'pdf' => 'application/pdf',
+    ];
+
     public function __construct(
         private readonly FilesystemMap $filesystemMap,
     ) {
@@ -245,7 +256,7 @@ final class FileStorage
      * @param string|null $sort       tri optionnel : 'asc' ou 'desc' (par nom de clé)
      * @param string|null $path       répertoire à lister (vide ou null = racine), ex. "subdir" ou "parent/enfant"
      *
-     * @return list<string> clés (fichiers ou dossiers avec slash final)
+     * @return list<array{path: string, type: string, mimeType?: string|null, size?: int|null}> entrées (path, type 'file'|'dir', mimeType et size pour les fichiers)
      *
      * @throws \InvalidArgumentException if filesystem does not exist or path contains '..'
      */
@@ -256,37 +267,54 @@ final class FileStorage
         $fs = $this->filesystemMap->get($filesystem);
         $listPath = $path === '' ? '' : $path;
 
-        $keys = [];
+        $items = [];
         foreach ($fs->listContents($listPath, false) as $item) {
             \assert($item instanceof StorageAttributes);
             $itemPath = $item->path();
             if ($item instanceof FileAttributes) {
                 if (!$this->isHidden($itemPath)) {
-                    $keys[] = $itemPath;
+                    $mimeType = $item->mimeType() ?? $this->mimeTypeFromExtension($itemPath);
+                    $items[] = [
+                        'path' => $itemPath,
+                        'type' => 'file',
+                        'mimeType' => $mimeType,
+                        'size' => $item->fileSize(),
+                    ];
                 }
             } elseif ($item instanceof DirectoryAttributes) {
-                $keys[] = rtrim($itemPath, '/') . '/';
+                $dirPath = rtrim($itemPath, '/') . '/';
+                $items[] = [
+                    'path' => $dirPath,
+                    'type' => 'dir',
+                ];
             }
         }
 
-        $keys = array_filter($keys, fn (string $key): bool => $this->isDirectChild($key, $path));
+        $items = array_filter($items, fn (array $entry): bool => $this->isDirectChild($entry['path'], $path));
 
         if ($type !== null && $type !== '') {
             $extensions = self::TYPE_EXTENSIONS[$type] ?? null;
             if ($extensions !== null) {
-                $keys = array_filter($keys, fn (string $key): bool => str_ends_with($key, '/') || $this->matchesType($key, $extensions));
+                $items = array_filter($items, fn (array $entry): bool => $entry['type'] === 'dir' || $this->matchesType($entry['path'], $extensions));
             }
         }
 
-        $keys = array_values($keys);
+        $items = array_values($items);
 
         if ($sort === 'desc') {
-            rsort($keys, \SORT_STRING);
+            usort($items, fn (array $a, array $b): int => strcmp($b['path'], $a['path']));
         } else {
-            sort($keys, \SORT_STRING);
+            usort($items, fn (array $a, array $b): int => strcmp($a['path'], $b['path']));
         }
 
-        return $keys;
+        return $items;
+    }
+
+    private function mimeTypeFromExtension(string $path): ?string
+    {
+        $ext = strtolower(pathinfo($path, \PATHINFO_EXTENSION));
+
+        return self::EXTENSION_MIME[$ext] ?? null;
     }
 
     /**
