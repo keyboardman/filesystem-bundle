@@ -165,12 +165,16 @@ final class FileStorage
      */
     public function delete(string $filesystem, string $key): void
     {
-        $key = trim($key, '/');
+        $key = trim(trim($key), '/');
         if ($key === '') {
             throw new \InvalidArgumentException('Path cannot be empty.');
         }
         if (str_contains($key, '..')) {
             throw new \InvalidArgumentException('Path cannot contain "..".');
+        }
+
+        if (!$this->pathExists($filesystem, $key)) {
+            throw new \InvalidArgumentException('File or directory not found.');
         }
 
         $fs = $this->filesystemMap->get($filesystem);
@@ -189,6 +193,17 @@ final class FileStorage
                 throw new \InvalidArgumentException('Directory is not empty.');
             }
             $fs->delete($keepKey);
+
+            return;
+        }
+
+        // Répertoire existant (has($key)) sans .keep : suppression du répertoire si vide
+        if ($fs->directoryExists($key)) {
+            $children = $this->listDirectChildKeys($fs, $key . '/');
+            if ($children !== []) {
+                throw new \InvalidArgumentException('Directory is not empty.');
+            }
+            $fs->deleteDirectory($key);
 
             return;
         }

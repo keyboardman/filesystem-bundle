@@ -191,10 +191,11 @@ final class FileStorageController
     #[Route('/delete', name: 'keyboardman_filesystem_delete', methods: ['POST'])]
     public function delete(Request $request): JsonResponse
     {
-        $filesystem = $request->request->getString('filesystem', 'default');
-        $path = $request->request->getString('path', '');
+        $payload = $this->getRequestPayload($request);
+        $filesystem = $payload['filesystem'] ?? $request->request->getString('filesystem', 'default');
+        $path = $payload['path'] ?? $payload['key'] ?? $request->request->getString('path', $request->request->getString('key', ''));
 
-        if ($path === '') {
+        if (!\is_string($path) || trim($path) === '') {
             return new JsonResponse(['error' => 'path is required'], Response::HTTP_BAD_REQUEST);
         }
         if (!$this->fileStorage->hasFilesystem($filesystem)) {
@@ -243,5 +244,24 @@ final class FileStorageController
             'filesystem' => $filesystem,
             'paths' => $paths,
         ], Response::HTTP_OK);
+    }
+
+    /**
+     * Retourne le body de la requête (JSON ou form) pour supporter les deux types d'envoi.
+     */
+    private function getRequestPayload(Request $request): array
+    {
+        if (method_exists($request, 'getPayload')) {
+            return $request->getPayload()->all();
+        }
+        $content = $request->getContent();
+        if (\is_string($content) && $content !== '') {
+            $decoded = json_decode($content, true);
+            if (\is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
+        return $request->request->all();
     }
 }
