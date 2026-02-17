@@ -1,6 +1,6 @@
 # Keyboardman Filesystem Bundle
 
-Bundle Symfony réutilisable exposant une **API File Storage** (upload, renommer, déplacer, supprimer) avec [Gaufrette](https://knplabs.github.io/Gaufrette/installation.html), support multi-filesystems et option de **cache** (pattern decorator Gaufrette).
+Bundle Symfony réutilisable exposant une **API File Storage** (upload, renommer, déplacer, supprimer) avec [Flysystem](https://flysystem.thephpleague.com/docs/) (The PHP League). Le bundle déclare `league/flysystem` en dépendance : votre projet n’a pas besoin de l’ajouter à son `composer.json`. Support multi-filesystems.
 
 ## Installation
 
@@ -44,50 +44,59 @@ return [
 
 ### Plusieurs filesystems
 
-Chaque filesystem est **nommé** et mappé à un adapter Gaufrette (service Symfony).
+Chaque filesystem est **nommé** et mappé à un **adapter Flysystem** (service Symfony implémentant `League\Flysystem\FilesystemAdapter`).
 
-Exemple avec un adapter local (à définir en service) :
+Exemple avec l’adapter Local (fourni par `league/flysystem`, dépendance du bundle) :
 
 ```yaml
 # config/packages/keyboardman_filesystem.yaml
 keyboardman_filesystem:
     filesystems:
         default:
-            adapter: my_app.gaufrette_adapter.local
+            adapter: my_app.flysystem_adapter.local
         documents:
-            adapter: my_app.gaufrette_adapter.documents
-```
+            adapter: my_app.flysystem_adapter.documents
 
-Vous devez définir les services adapters (ex. `Gaufrette\Adapter\Local`, `Gaufrette\Adapter\InMemory`, ou un adapter S3/FTP, etc.) et référencer leur id dans `adapter`.
-
-Exemple de définition d’un adapter local :
-
-```yaml
 services:
-    my_app.gaufrette_adapter.local:
-        class: Gaufrette\Adapter\Local
+    my_app.flysystem_adapter.local:
+        class: League\Flysystem\Local\LocalFilesystemAdapter
         arguments:
             - '%kernel.project_dir%/var/storage'
 ```
 
-### Exemple : Amazon S3
-
-Installez le SDK AWS pour PHP :
-
-```bash
-composer require aws/aws-sdk-php
-```
-
-Puis définissez le client S3 et l’adapter Gaufrette (utilisez des variables d’environnement pour les identifiants) :
+Pour un stockage en mémoire (tests, démo) :
 
 ```yaml
-# config/packages/keyboardman_filesystem.yaml
+# Nécessite league/flysystem-memory (optionnel, souvent en require-dev)
+services:
+    my_app.flysystem_adapter.memory:
+        class: League\Flysystem\InMemory\InMemoryFilesystemAdapter
+```
+
+### Exemple : Amazon S3
+
+Installez l’adapter S3 pour Flysystem :
+
+```bash
+composer require league/flysystem-aws-s3-v3
+```
+
+Puis définissez le filesystem (utilisez des variables d’environnement pour les identifiants) :
+
+```yaml
 keyboardman_filesystem:
     filesystems:
         s3_uploads:
-            adapter: my_app.gaufrette_adapter.s3
+            adapter: my_app.flysystem_adapter.s3
 
 services:
+    my_app.flysystem_adapter.s3:
+        class: League\Flysystem\AwsS3V3\AwsS3V3Adapter
+        arguments:
+            - '@my_app.s3_client'
+            - '%env(AWS_S3_BUCKET)%'
+            - 'uploads/'   # prefix optionnel
+
     my_app.s3_client:
         class: Aws\S3\S3Client
         arguments:
@@ -97,37 +106,11 @@ services:
                 credentials:
                     key: '%env(AWS_ACCESS_KEY_ID)%'
                     secret: '%env(AWS_SECRET_ACCESS_KEY)%'
-
-    my_app.gaufrette_adapter.s3:
-        class: Gaufrette\Adapter\AwsS3
-        arguments:
-            - '@my_app.s3_client'
-            - '%env(AWS_S3_BUCKET)%'
-            - { directory: 'uploads', acl: 'private' }
-            - true   # detectContentType
 ```
 
 ### Exemple : FTP
 
-L’adapter FTP utilise l’extension PHP `ftp`. Définissez un service avec le répertoire distant, l’hôte et les options (port, utilisateur, mot de passe, etc.) :
-
-```yaml
-# config/packages/keyboardman_filesystem.yaml
-keyboardman_filesystem:
-    filesystems:
-        ftp_storage:
-            adapter: my_app.gaufrette_adapter.ftp
-
-services:
-    my_app.gaufrette_adapter.ftp:
-        class: Gaufrette\Adapter\Ftp
-        arguments:
-            - '/remote/directory'   # répertoire sur le serveur FTP
-            - '%env(FTP_HOST)%'
-            - { username: '%env(FTP_USER)%', password: '%env(FTP_PASSWORD)%', port: 21, passive: true, create: true }
-```
-
-Options utiles pour `Ftp` : `port`, `username`, `password`, `passive`, `create` (créer les répertoires si besoin), `ssl` (connexion FTPS), `timeout`, `utf8`.
+Installez l’adapter FTP : `composer require league/flysystem-ftp`. Puis définissez un service dont la classe implémente `League\Flysystem\FilesystemAdapter` (voir la [doc Flysystem](https://flysystem.thephpleague.com/docs/adapter/ftp/)).
 
 ### Restrictions d’upload (api)
 
@@ -143,25 +126,6 @@ keyboardman_filesystem:
 - **allowed_types** : types autorisés (`image`, `audio`, `video`). Extensions alignées avec le filtrage de la route list.
 - **max_upload_size** : taille max en bytes, ou en notation lisible (`10M`, `50M`, `1G`).
 - En cas de non-conformité, l’API retourne **400** avec `{"error": "File type not allowed"}` ou `{"error": "File size exceeds limit"}`.
-
-### Option cache (pattern Gaufrette)
-
-Pour un filesystem lent (ex. FTP), vous pouvez activer le **cache** en utilisant le mécanisme Gaufrette : un adapter de **cache** + un adapter **source**. Voir [Gaufrette – Caching](https://knplabs.github.io/Gaufrette/caching.html).
-
-```yaml
-keyboardman_filesystem:
-    filesystems:
-        ftp_cached:
-            adapter: placeholder   # ignoré quand cache est activé
-            cache:
-                enabled: true
-                source: my_app.ftp_adapter
-                cache: my_app.cache_adapter
-```
-
-Vous devez définir les services `source` (l’adapter à mettre en cache) et `cache` (l’adapter qui stocke le cache, ex. local ou APC). Si la classe `Gaufrette\Adapter\Cache` n’est pas disponible dans votre version de Gaufrette, vous pouvez envelopper vous‑même l’adapter source avec un decorator et passer ce service en `adapter` (sans utiliser la clé `cache`).
-
-**Limites** : l’invalidation du cache (TTL, invalidation manuelle) dépend du comportement du decorator Gaufrette ; consultez la doc Gaufrette.
 
 ## Routes / API HTTP
 
@@ -255,6 +219,29 @@ Puis ouvrir http://localhost:8000/api/filesystem/demo dans le navigateur.
 ```bash
 docker run --rm keyboardman/filesystem-bundle ./vendor/bin/phpunit
 ```
+
+## Projet démo (demo/)
+
+Le répertoire **demo/** à la racine du dépôt contient un projet Symfony minimal qui utilise le bundle. Il permet de valider l’installation et de tester l’API sans ajouter `league/flysystem` dans le projet (le bundle fournit la dépendance).
+
+**Lancer la démo :**
+
+```bash
+cd demo
+composer install
+symfony server:start
+# ou : php -S localhost:8000 -t public
+```
+
+Puis ouvrir http://localhost:8000/api/filesystem/demo pour la page de démo (upload, list, delete, etc.).
+
+## Migration depuis Gaufrette
+
+Si vous migriez depuis une version du bundle basée sur Gaufrette :
+
+- **Configuration** : la clé `adapter` pointe désormais vers un service **Flysystem** (`League\Flysystem\FilesystemAdapter`), plus vers un adapter Gaufrette. Remplacez par exemple `Gaufrette\Adapter\Local` par `League\Flysystem\Local\LocalFilesystemAdapter`, et `Gaufrette\Adapter\InMemory` par `League\Flysystem\InMemory\InMemoryFilesystemAdapter` (package `league/flysystem-memory`).
+- **Cache** : l’option de configuration `cache` (source + cache) a été retirée. Pour un cache sur un filesystem lent, envisagez un décorateur ou une solution alignée sur [Flysystem v3](https://flysystem.thephpleague.com/docs/).
+- **API HTTP et service FileStorage** : les signatures et réponses restent identiques.
 
 ## Licence
 

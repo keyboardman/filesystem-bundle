@@ -1,0 +1,23 @@
+framework:
+    secret: 'demo-secret'
+    router:
+        resource: '%kernel.project_dir%/config/routes.yaml'
+        type: yaml
+    http_method_override: false
+
+keyboardman_filesystem:
+    api:
+        allowed_types: ['image', 'audio', 'video']
+        max_upload_size: 10M
+    filesystems:
+        default:
+            adapter: demo.flysystem_adapter.default
+
+services:
+    _defaults:
+        autowire: true
+
+    demo.flysystem_adapter.default:
+        class: League\Flysystem\Local\LocalFilesystemAdapter
+        arguments:
+            - '%kernel.project_dir%/var/storage'

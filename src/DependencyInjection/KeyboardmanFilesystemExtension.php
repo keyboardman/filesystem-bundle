@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Keyboardman\FilesystemBundle\DependencyInjection;
 
-use Gaufrette\Filesystem;
-use Gaufrette\FilesystemMap;
+use Keyboardman\FilesystemBundle\Flysystem\FilesystemMap;
 use Keyboardman\FilesystemBundle\Service\FileStorage;
 use Keyboardman\FilesystemBundle\Service\UploadValidator;
+use League\Flysystem\Filesystem;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
@@ -25,11 +25,9 @@ final class KeyboardmanFilesystemExtension extends Extension
         $filesystemMapDef = new Definition(FilesystemMap::class);
 
         foreach ($config['filesystems'] as $name => $fsConfig) {
-            $adapterRef = ($fsConfig['cache']['enabled'] ?? false)
-                ? $this->createCachedAdapter($container, $name, $fsConfig['cache']['source'], $fsConfig['cache']['cache'])
-                : new Reference($fsConfig['adapter']);
-
-            $fsDef = new Definition(Filesystem::class, [$adapterRef]);
+            $fsDef = new Definition(Filesystem::class, [
+                new Reference($fsConfig['adapter']),
+            ]);
             $fsDef->setPublic(false);
             $fsId = 'keyboardman_filesystem.filesystem.' . $name;
             $container->setDefinition($fsId, $fsDef);
@@ -54,21 +52,5 @@ final class KeyboardmanFilesystemExtension extends Extension
 
         $loader = new YamlFileLoader($container, new FileLocator(__DIR__ . '/../Resources/config'));
         $loader->load('services.yaml');
-    }
-
-    private function createCachedAdapter(ContainerBuilder $container, string $name, string $sourceId, string $cacheId): Reference
-    {
-        $cacheAdapterClass = 'Gaufrette\Adapter\Cache';
-        if (!class_exists($cacheAdapterClass)) {
-            throw new \LogicException('Gaufrette cache adapter not available. Ensure knplabs/gaufrette provides the Cache adapter.');
-        }
-        $def = new Definition($cacheAdapterClass, [
-            new Reference($cacheId),
-            new Reference($sourceId),
-        ]);
-        $def->setPublic(false);
-        $id = 'keyboardman_filesystem.cached_adapter.' . $name;
-        $container->setDefinition($id, $def);
-        return new Reference($id);
     }
 }

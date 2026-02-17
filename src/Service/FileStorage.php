@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Keyboardman\FilesystemBundle\Service;
 
+use Keyboardman\FilesystemBundle\Flysystem\FilesystemMap;
+use League\Flysystem\DirectoryAttributes;
+use League\Flysystem\FileAttributes;
+use League\Flysystem\StorageAttributes;
+
 final class FileStorage
 {
     /** Fichier masqué : segment de chemin (ex. nom de fichier) commençant par '.' */
@@ -16,11 +21,8 @@ final class FileStorage
         'video' => ['mp4', 'webm', 'avi', 'mov', 'mkv', 'm4v'],
     ];
 
-    /**
-     * @param object $filesystemMap Gaufrette\FilesystemMapInterface (has(string), get(string))
-     */
     public function __construct(
-        private readonly object $filesystemMap,
+        private readonly FilesystemMap $filesystemMap,
     ) {
     }
 
@@ -31,26 +33,30 @@ final class FileStorage
 
     public function write(string $filesystem, string $key, string $content, bool $overwrite = false): int
     {
-        $fs = $this->getFilesystem($filesystem);
-        return $fs->write($key, $content, $overwrite);
+        $fs = $this->filesystemMap->get($filesystem);
+        $fs->write($key, $content);
+
+        return \strlen($content);
     }
 
     public function read(string $filesystem, string $key): string
     {
-        $fs = $this->getFilesystem($filesystem);
+        $fs = $this->filesystemMap->get($filesystem);
+
         return $fs->read($key);
     }
 
     public function has(string $filesystem, string $key): bool
     {
-        $fs = $this->getFilesystem($filesystem);
+        $fs = $this->filesystemMap->get($filesystem);
+
         return $fs->has($key);
     }
 
     public function rename(string $filesystem, string $sourceKey, string $targetKey): void
     {
-        $fs = $this->getFilesystem($filesystem);
-        $fs->rename($sourceKey, $targetKey);
+        $fs = $this->filesystemMap->get($filesystem);
+        $fs->move($sourceKey, $targetKey);
     }
 
     /**
@@ -69,22 +75,23 @@ final class FileStorage
             throw new \InvalidArgumentException('Path cannot contain "..".');
         }
 
-        $fs = $this->getFilesystem($filesystem);
+        $fs = $this->filesystemMap->get($filesystem);
 
-        if ($this->has($filesystem, $key)) {
+        if ($fs->fileExists($key)) {
             $fs->delete($key);
+
             return;
         }
 
         $keepKey = $key . '/.keep';
         if ($this->has($filesystem, $keepKey)) {
-            $result = $fs->listKeys($key . '/');
-            $keys = $result['keys'] ?? [];
-            $otherKeys = array_filter($keys, fn (string $k): bool => $k !== $keepKey);
+            $otherKeys = $this->listDirectChildKeys($fs, $key . '/');
+            $otherKeys = array_filter($otherKeys, fn (string $k): bool => $k !== $keepKey);
             if ($otherKeys !== []) {
                 throw new \InvalidArgumentException('Directory is not empty.');
             }
             $fs->delete($keepKey);
+
             return;
         }
 
@@ -113,23 +120,8 @@ final class FileStorage
             return;
         }
 
-        $fs = $this->getFilesystem($filesystem);
-        $fs->write($placeholderKey, '', true);
-    }
-
-    /**
-     * @throws \InvalidArgumentException si path vide ou contient '..'
-     */
-    private function normalizeDirectoryPath(string $path): string
-    {
-        $path = trim($path, '/');
-        if ($path === '') {
-            throw new \InvalidArgumentException('Directory path cannot be empty.');
-        }
-        if (str_contains($path, '..')) {
-            throw new \InvalidArgumentException('Directory path cannot contain "..".');
-        }
-        return $path;
+        $fs = $this->filesystemMap->get($filesystem);
+        $fs->write($placeholderKey, '');
     }
 
     /**
@@ -149,22 +141,25 @@ final class FileStorage
     {
         $path = $path !== null && $path !== '' ? $this->normalizeListPath($path) : '';
 
-        $fs = $this->getFilesystem($filesystem);
-        $prefix = $path === '' ? '' : $path . '/';
-        $result = $fs->listKeys($prefix);
-        $keys = $result['keys'] ?? [];
+        $fs = $this->filesystemMap->get($filesystem);
+        $listPath = $path === '' ? '' : $path;
+
+        $keys = [];
+        foreach ($fs->listContents($listPath, false) as $item) {
+            \assert($item instanceof StorageAttributes);
+            $itemPath = $item->path();
+            if ($item instanceof FileAttributes) {
+                if (str_ends_with($itemPath, '/.keep')) {
+                    $keys[] = substr($itemPath, 0, -\strlen('/.keep')) . '/';
+                } elseif (!$this->isHidden($itemPath)) {
+                    $keys[] = $itemPath;
+                }
+            } elseif ($item instanceof DirectoryAttributes) {
+                $keys[] = rtrim($itemPath, '/') . '/';
+            }
+        }
 
         $keys = array_filter($keys, fn (string $key): bool => $this->isDirectChild($key, $path));
-
-        $dirPlaceholders = [];
-        $keys = array_filter($keys, function (string $key) use (&$dirPlaceholders): bool {
-            if (str_ends_with($key, '/.keep')) {
-                $dirPlaceholders[] = substr($key, 0, -\strlen('/.keep')) . '/';
-                return false;
-            }
-            return !$this->isHidden($key);
-        });
-        $keys = array_merge(array_values($keys), $dirPlaceholders);
 
         if ($type !== null && $type !== '') {
             $extensions = self::TYPE_EXTENSIONS[$type] ?? null;
@@ -185,25 +180,52 @@ final class FileStorage
     }
 
     /**
+     * @return list<string> full keys under the given prefix (one level)
+     */
+    private function listDirectChildKeys(object $fs, string $prefix): array
+    {
+        $keys = [];
+        foreach ($fs->listContents(trim($prefix, '/'), false) as $item) {
+            \assert($item instanceof StorageAttributes);
+            $keys[] = $item->path();
+        }
+
+        return $keys;
+    }
+
+    /**
+     * @throws \InvalidArgumentException si path vide ou contient '..'
+     */
+    private function normalizeDirectoryPath(string $path): string
+    {
+        $path = trim($path, '/');
+        if ($path === '') {
+            throw new \InvalidArgumentException('Directory path cannot be empty.');
+        }
+        if (str_contains($path, '..')) {
+            throw new \InvalidArgumentException('Directory path cannot contain "..".');
+        }
+
+        return $path;
+    }
+
+    /**
      * True si la clé est un enfant direct du répertoire (un seul niveau, pas de récursion).
      */
     private function isDirectChild(string $key, string $directory): bool
     {
         if ($directory === '') {
-            if (str_contains($key, '/')) {
-                return str_ends_with($key, '/.keep') && substr_count($key, '/') === 1;
-            }
-            return true;
+            return !str_contains($key, '/') || (substr_count($key, '/') === 1 && (str_ends_with($key, '/') || str_ends_with($key, '/.keep')));
         }
         $prefix = $directory . '/';
         if (!str_starts_with($key, $prefix)) {
             return false;
         }
         $remainder = substr($key, \strlen($prefix));
-        if ($remainder === '' || str_contains($remainder, '/')) {
-            return $remainder !== '' && str_ends_with($key, '/.keep') && substr_count($remainder, '/') === 1;
+        if ($remainder === '') {
+            return false;
         }
-        return true;
+        return !str_contains(rtrim($remainder, '/'), '/');
     }
 
     /**
@@ -215,6 +237,7 @@ final class FileStorage
         if (str_contains($path, '..')) {
             throw new \InvalidArgumentException('Path cannot contain "..".');
         }
+
         return $path;
     }
 
@@ -231,17 +254,5 @@ final class FileStorage
     {
         $ext = strtolower(pathinfo($key, \PATHINFO_EXTENSION));
         return $ext !== '' && \in_array($ext, $extensions, true);
-    }
-
-    /**
-     * @return object Filesystem instance (Gaufrette\FilesystemInterface)
-     * @throws \InvalidArgumentException if filesystem does not exist
-     */
-    private function getFilesystem(string $name): object
-    {
-        if (!$this->filesystemMap->has($name)) {
-            throw new \InvalidArgumentException(sprintf('There is no filesystem defined having "%s" name.', $name));
-        }
-        return $this->filesystemMap->get($name);
     }
 }

@@ -13,7 +13,7 @@ keyboardman_filesystem:
 
 services:
     keyboardman_filesystem.adapter.default:
-        class: Gaufrette\Adapter\InMemory
+        class: League\Flysystem\InMemory\InMemoryFilesystemAdapter
 
     keyboardman_filesystem.adapter.other:
-        class: Gaufrette\Adapter\InMemory
+        class: League\Flysystem\InMemory\InMemoryFilesystemAdapter

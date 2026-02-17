@@ -1,0 +1,2 @@
+keyboardman_filesystem_api:
+    resource: '@KeyboardmanFilesystemBundle/Resources/config/routes.yaml'

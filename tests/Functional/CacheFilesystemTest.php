@@ -9,9 +9,7 @@ use Keyboardman\FilesystemBundle\Tests\App\Kernel;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
- * Vérifie qu'un filesystem (avec ou sans cache) permet read/write.
- * La config "cache" du bundle utilise le pattern Gaufrette (adapter cache + source).
- * Si Gaufrette\Adapter\Cache n'est pas disponible, les filesystems sans cache sont utilisés.
+ * Vérifie qu'un filesystem permet read/write (backend Flysystem).
  */
 final class CacheFilesystemTest extends KernelTestCase
 {
