@@ -35,6 +35,17 @@ final class FileStorage
     public function write(string $filesystem, string $key, string $content, bool $overwrite = false): int
     {
         $fs = $this->filesystemMap->get($filesystem);
+        
+        // Vérifier si le chemin existe déjà comme répertoire
+        if ($fs->directoryExists($key)) {
+            throw new \InvalidArgumentException('Cannot write to a path that is already a directory.');
+        }
+        
+        // Vérifier si le fichier existe déjà et que l'overwrite n'est pas autorisé
+        if (!$overwrite && $fs->fileExists($key)) {
+            throw new \InvalidArgumentException('File already exists and overwrite is disabled.');
+        }
+        
         $this->ensureParentDirectory($fs, $key);
         $fs->write($key, $content);
 
@@ -74,8 +85,7 @@ final class FileStorage
 
         $fs = $this->filesystemMap->get($filesystem);
 
-        $sourceKeepKey = $sourceKey . '/.keep';
-        if ($this->has($filesystem, $sourceKeepKey)) {
+        if ($fs->directoryExists($sourceKey)) {
             $this->renameDirectory($fs, $filesystem, $sourceKey, $targetKey);
 
             return;
@@ -85,7 +95,7 @@ final class FileStorage
     }
 
     /**
-     * Retourne true si le chemin désigne un répertoire (présence de path/.keep).
+     * Retourne true si le chemin désigne un répertoire (répertoire natif Flysystem).
      */
     public function isDirectory(string $filesystem, string $path): bool
     {
@@ -93,12 +103,13 @@ final class FileStorage
         if ($path === '') {
             return false;
         }
+        $fs = $this->filesystemMap->get($filesystem);
 
-        return $this->has($filesystem, $path . '/.keep');
+        return $fs->directoryExists($path);
     }
 
     /**
-     * Retourne true si le chemin existe comme fichier ou comme répertoire (path/.keep).
+     * Retourne true si le chemin existe comme fichier ou comme répertoire.
      */
     public function pathExists(string $filesystem, string $path): bool
     {
@@ -106,8 +117,9 @@ final class FileStorage
         if ($path === '') {
             return false;
         }
+        $fs = $this->filesystemMap->get($filesystem);
 
-        return $this->has($filesystem, $path) || $this->has($filesystem, $path . '/.keep');
+        return $this->has($filesystem, $path) || $fs->directoryExists($path);
     }
 
     /**
@@ -126,22 +138,22 @@ final class FileStorage
         $allPaths = $this->listAllKeysRecursively($fs, $sourceKey);
         usort($allPaths, fn (string $a, string $b): int => substr_count($a, '/') <=> substr_count($b, '/'));
 
-        foreach ($allPaths as $path) {
-            $suffix = substr($path, \strlen($sourceKey));
-            $targetPath = $targetKey . $suffix;
-            $this->ensureParentDirectory($fs, $targetPath);
-            $fs->move($path, $targetPath);
+        $this->ensureParentDirectory($fs, $targetKey . '/');
+        if ($allPaths === []) {
+            $fs->createDirectory($targetKey);
+        } else {
+            foreach ($allPaths as $path) {
+                $suffix = substr($path, \strlen($sourceKey));
+                $targetPath = $targetKey . $suffix;
+                $this->ensureParentDirectory($fs, $targetPath);
+                $fs->move($path, $targetPath);
+            }
         }
-
-        // Supprimer le fichier .keep du répertoire source après avoir déplacé tout le contenu
-        $sourceKeepKey = $sourceKey . '/.keep';
-        if ($this->has($filesystem, $sourceKeepKey)) {
-            $fs->delete($sourceKeepKey);
-        }
+        $fs->deleteDirectory($sourceKey);
     }
 
     /**
-     * @return list<string> toutes les clés de fichiers sous le préfixe (récursif). Les répertoires (convention .keep) sont représentés par leur fichier .keep.
+     * @return list<string> toutes les clés de fichiers sous le préfixe (récursif).
      */
     private function listAllKeysRecursively(FilesystemOperator $fs, string $prefix): array
     {
@@ -165,7 +177,7 @@ final class FileStorage
      */
     public function delete(string $filesystem, string $key): void
     {
-        $key = trim(trim($key), '/');
+        $key = trim($key, '/');
         if ($key === '') {
             throw new \InvalidArgumentException('Path cannot be empty.');
         }
@@ -185,19 +197,6 @@ final class FileStorage
             return;
         }
 
-        $keepKey = $key . '/.keep';
-        if ($this->has($filesystem, $keepKey)) {
-            $otherKeys = $this->listDirectChildKeys($fs, $key . '/');
-            $otherKeys = array_filter($otherKeys, fn (string $k): bool => $k !== $keepKey);
-            if ($otherKeys !== []) {
-                throw new \InvalidArgumentException('Directory is not empty.');
-            }
-            $fs->delete($keepKey);
-
-            return;
-        }
-
-        // Répertoire existant (has($key)) sans .keep : suppression du répertoire si vide
         if ($fs->directoryExists($key)) {
             $children = $this->listDirectChildKeys($fs, $key . '/');
             if ($children !== []) {
@@ -213,8 +212,8 @@ final class FileStorage
 
     /**
      * Crée un répertoire (à la racine ou dans un sous-chemin).
-     * Implémentation portable : écrit un fichier placeholder path/.keep.
-     * Idempotent : si le répertoire existe déjà (path/.keep présent), ne fait rien.
+     * Utilise le répertoire natif Flysystem (createDirectory).
+     * Idempotent : si le répertoire existe déjà, ne fait rien.
      *
      * @param string $path chemin du répertoire (ex. "nouveau" ou "parent/enfant")
      *
@@ -223,19 +222,18 @@ final class FileStorage
     public function createDirectory(string $filesystem, string $path): void
     {
         $path = $this->normalizeDirectoryPath($path);
-        $placeholderKey = $path . '/.keep';
+        $fs = $this->filesystemMap->get($filesystem);
 
         if ($this->has($filesystem, $path)) {
             throw new \InvalidArgumentException('A file already exists at this path.');
         }
 
-        if ($this->has($filesystem, $placeholderKey)) {
+        if ($fs->directoryExists($path)) {
             return;
         }
 
-        $fs = $this->filesystemMap->get($filesystem);
-        $this->ensureParentDirectory($fs, $placeholderKey);
-        $fs->write($placeholderKey, '');
+        $this->ensureParentDirectory($fs, $path . '/');
+        $fs->createDirectory($path);
     }
 
     /**
@@ -263,9 +261,7 @@ final class FileStorage
             \assert($item instanceof StorageAttributes);
             $itemPath = $item->path();
             if ($item instanceof FileAttributes) {
-                if (str_ends_with($itemPath, '/.keep')) {
-                    $keys[] = substr($itemPath, 0, -\strlen('/.keep')) . '/';
-                } elseif (!$this->isHidden($itemPath)) {
+                if (!$this->isHidden($itemPath)) {
                     $keys[] = $itemPath;
                 }
             } elseif ($item instanceof DirectoryAttributes) {
@@ -329,7 +325,7 @@ final class FileStorage
     private function isDirectChild(string $key, string $directory): bool
     {
         if ($directory === '') {
-            return !str_contains($key, '/') || (substr_count($key, '/') === 1 && (str_ends_with($key, '/') || str_ends_with($key, '/.keep')));
+            return !str_contains($key, '/') || (substr_count($key, '/') === 1 && str_ends_with($key, '/'));
         }
         $prefix = $directory . '/';
         if (!str_starts_with($key, $prefix)) {

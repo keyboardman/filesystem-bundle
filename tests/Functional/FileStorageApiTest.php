@@ -98,8 +98,8 @@ final class FileStorageApiTest extends WebTestCase
             'target' => 'new-dir',
         ]);
         $this->assertResponseStatusCodeSame(Response::HTTP_OK);
-        $this->assertTrue($storage->has('default', 'new-dir/.keep'));
-        $this->assertFalse($storage->has('default', 'old-dir/.keep'));
+        $this->assertTrue($storage->pathExists('default', 'new-dir'));
+        $this->assertFalse($storage->pathExists('default', 'old-dir'));
     }
 
     public function testRenameDirectoryWithFilesSuccess(): void
@@ -115,11 +115,11 @@ final class FileStorageApiTest extends WebTestCase
             'target' => 'renamed-folder',
         ]);
         $this->assertResponseStatusCodeSame(Response::HTTP_OK);
-        $this->assertTrue($storage->has('default', 'renamed-folder/.keep'));
+        $this->assertTrue($storage->pathExists('default', 'renamed-folder'));
         $this->assertTrue($storage->has('default', 'renamed-folder/a.txt'));
         $this->assertTrue($storage->has('default', 'renamed-folder/b.txt'));
         $this->assertSame('content a', $storage->read('default', 'renamed-folder/a.txt'));
-        $this->assertFalse($storage->has('default', 'folder/.keep'));
+        $this->assertFalse($storage->pathExists('default', 'folder'));
         $this->assertFalse($storage->has('default', 'folder/a.txt'));
     }
 
@@ -136,12 +136,12 @@ final class FileStorageApiTest extends WebTestCase
             'target' => 'parent-renamed',
         ]);
         $this->assertResponseStatusCodeSame(Response::HTTP_OK);
-        $this->assertTrue($storage->has('default', 'parent-renamed/.keep'));
-        $this->assertTrue($storage->has('default', 'parent-renamed/child/.keep'));
+        $this->assertTrue($storage->pathExists('default', 'parent-renamed'));
+        $this->assertTrue($storage->pathExists('default', 'parent-renamed/child'));
         $this->assertTrue($storage->has('default', 'parent-renamed/child/file.txt'));
         $this->assertSame('nested', $storage->read('default', 'parent-renamed/child/file.txt'));
-        $this->assertFalse($storage->has('default', 'parent/.keep'));
-        $this->assertFalse($storage->has('default', 'parent/child/.keep'));
+        $this->assertFalse($storage->pathExists('default', 'parent'));
+        $this->assertFalse($storage->pathExists('default', 'parent/child'));
         $this->assertFalse($storage->has('default', 'parent/child/file.txt'));
     }
 
@@ -157,8 +157,8 @@ final class FileStorageApiTest extends WebTestCase
             'target' => 'dir-b',
         ]);
         $this->assertResponseStatusCodeSame(Response::HTTP_CONFLICT);
-        $this->assertTrue($storage->has('default', 'dir-a/.keep'));
-        $this->assertTrue($storage->has('default', 'dir-b/.keep'));
+        $this->assertTrue($storage->pathExists('default', 'dir-a'));
+        $this->assertTrue($storage->pathExists('default', 'dir-b'));
     }
 
     public function testRenameDirectorySourceNotFoundReturnsNotFound(): void
@@ -184,9 +184,9 @@ final class FileStorageApiTest extends WebTestCase
             'target' => 'destination/moved-dir',
         ]);
         $this->assertResponseStatusCodeSame(Response::HTTP_OK);
-        $this->assertTrue($storage->has('default', 'destination/moved-dir/.keep'));
+        $this->assertTrue($storage->pathExists('default', 'destination/moved-dir'));
         $this->assertTrue($storage->has('default', 'destination/moved-dir/inside.txt'));
-        $this->assertFalse($storage->has('default', 'move-me/.keep'));
+        $this->assertFalse($storage->pathExists('default', 'move-me'));
         $this->assertFalse($storage->has('default', 'move-me/inside.txt'));
     }
 
@@ -214,7 +214,7 @@ final class FileStorageApiTest extends WebTestCase
             'filesystem' => 'default',
             'path' => 'todelete.txt',
         ]);
-        $this->assertResponseStatusCodeSame(Response::HTTP_NO_CONTENT);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
         $this->assertFalse($storage->has('default', 'todelete.txt'));
     }
 
@@ -225,7 +225,9 @@ final class FileStorageApiTest extends WebTestCase
             'filesystem' => 'default',
             'path' => 'missing.txt',
         ]);
-        $this->assertResponseStatusCodeSame(Response::HTTP_NOT_FOUND);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $json = json_decode($client->getResponse()->getContent(), true);
+        $this->assertTrue($json['deleted'] ?? false);
     }
 
     public function testDeleteEmptyDirectorySuccess(): void
@@ -233,13 +235,13 @@ final class FileStorageApiTest extends WebTestCase
         $client = static::createClient();
         $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
         $storage->createDirectory('default', 'empty-dir');
-        $this->assertTrue($storage->has('default', 'empty-dir/.keep'));
+        $this->assertTrue($storage->pathExists('default', 'empty-dir'));
         $client->request('POST', '/api/filesystem/delete', [
             'filesystem' => 'default',
             'path' => 'empty-dir',
         ]);
-        $this->assertResponseStatusCodeSame(Response::HTTP_NO_CONTENT);
-        $this->assertFalse($storage->has('default', 'empty-dir/.keep'));
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertFalse($storage->pathExists('default', 'empty-dir'));
     }
 
     public function testDeleteNonEmptyDirectoryReturnsConflict(): void
@@ -255,7 +257,7 @@ final class FileStorageApiTest extends WebTestCase
         $this->assertResponseStatusCodeSame(Response::HTTP_CONFLICT);
         $json = json_decode($client->getResponse()->getContent(), true);
         $this->assertSame('Directory is not empty', $json['error']);
-        $this->assertTrue($storage->has('default', 'filled-dir/.keep'));
+        $this->assertTrue($storage->pathExists('default', 'filled-dir'));
     }
 
     public function testCreateDirectoryAtRootSuccess(): void
@@ -270,7 +272,7 @@ final class FileStorageApiTest extends WebTestCase
         $json = json_decode($client->getResponse()->getContent(), true);
         $this->assertSame('default', $json['filesystem']);
         $this->assertSame('nouveau-dossier', $json['path']);
-        $this->assertTrue($storage->has('default', 'nouveau-dossier/.keep'));
+        $this->assertTrue($storage->pathExists('default', 'nouveau-dossier'));
     }
 
     public function testCreateDirectoryNestedSuccess(): void
@@ -284,7 +286,7 @@ final class FileStorageApiTest extends WebTestCase
         $this->assertResponseStatusCodeSame(Response::HTTP_CREATED);
         $json = json_decode($client->getResponse()->getContent(), true);
         $this->assertSame('parent/enfant/sous-dossier', $json['path']);
-        $this->assertTrue($storage->has('default', 'parent/enfant/sous-dossier/.keep'));
+        $this->assertTrue($storage->pathExists('default', 'parent/enfant/sous-dossier'));
     }
 
     public function testCreateDirectoryUnknownFilesystem(): void
@@ -345,7 +347,7 @@ final class FileStorageApiTest extends WebTestCase
             'path' => 'idempotent-dir',
         ]);
         $this->assertResponseStatusCodeSame(Response::HTTP_CREATED);
-        $this->assertTrue($storage->has('default', 'idempotent-dir/.keep'));
+        $this->assertTrue($storage->pathExists('default', 'idempotent-dir'));
     }
 
     public function testMultiFilesystem(): void
@@ -463,7 +465,7 @@ final class FileStorageApiTest extends WebTestCase
         $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
         $storage->write('other', 'folder/a.jpg', 'a');
         $storage->write('other', 'folder/b.png', 'b');
-        $storage->write('other', 'folder/sub/.keep', '');
+        $storage->createDirectory('other', 'folder/sub');
         $storage->write('other', 'folder/sub/other.txt', 'x');
         $client->request('GET', '/api/filesystem/list', ['filesystem' => 'other', 'path' => 'folder']);
         $this->assertResponseStatusCodeSame(Response::HTTP_OK);

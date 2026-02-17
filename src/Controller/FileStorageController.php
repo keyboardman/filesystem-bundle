@@ -23,7 +23,11 @@ final class FileStorageController
     public function upload(Request $request): JsonResponse
     {
         $filesystem = $request->request->getString('filesystem', 'default');
-        $key = $request->request->getString('key', '');
+        
+        // Accepter 'path' ou 'key' pour le chemin de destination
+        $pathParam = $request->request->getString('path', '');
+        $keyParam = $request->request->getString('key', '');
+        $destinationPath = $pathParam !== '' ? $pathParam : $keyParam;
 
         if (!$this->fileStorage->hasFilesystem($filesystem)) {
             return new JsonResponse(['error' => 'Unknown filesystem'], Response::HTTP_BAD_REQUEST);
@@ -44,8 +48,40 @@ final class FileStorageController
             return new JsonResponse(['error' => 'Could not read file'], Response::HTTP_BAD_REQUEST);
         }
 
-        $path = $key !== '' ? $key : $file->getClientOriginalName();
-        $this->fileStorage->write($filesystem, $path, $content, true);
+        // Déterminer le chemin final
+        $fileName = $file->getClientOriginalName();
+        
+        if ($destinationPath !== '') {
+            // Si le chemin fourni se termine par '/', c'est un répertoire : ajouter le nom du fichier
+            if (str_ends_with($destinationPath, '/')) {
+                $path = rtrim($destinationPath, '/') . '/' . $fileName;
+            } else {
+                // Vérifier si le chemin fourni est un répertoire existant
+                if ($this->fileStorage->isDirectory($filesystem, $destinationPath)) {
+                    // C'est un répertoire : créer le fichier à l'intérieur avec le nom original
+                    $path = rtrim($destinationPath, '/') . '/' . $fileName;
+                } else {
+                    // Utiliser le chemin tel quel
+                    $path = $destinationPath;
+                }
+            }
+        } else {
+            // Pas de chemin fourni : utiliser le nom du fichier original
+            $path = $fileName;
+        }
+        
+        try {
+            $this->fileStorage->write($filesystem, $path, $content, true);
+        } catch (\InvalidArgumentException $e) {
+            $msg = $e->getMessage();
+            if (str_contains($msg, 'already a directory')) {
+                return new JsonResponse(['error' => 'Cannot write to a path that is already a directory'], Response::HTTP_CONFLICT);
+            }
+            if (str_contains($msg, 'already exists')) {
+                return new JsonResponse(['error' => $msg], Response::HTTP_CONFLICT);
+            }
+            return new JsonResponse(['error' => $msg], Response::HTTP_BAD_REQUEST);
+        }
 
         return new JsonResponse([
             'filesystem' => $filesystem,
@@ -96,8 +132,19 @@ final class FileStorageController
                 continue;
             }
             $path = $file->getClientOriginalName();
-            $this->fileStorage->write($filesystem, $path, $content, true);
-            $paths[] = $path;
+            try {
+                $this->fileStorage->write($filesystem, $path, $content, true);
+                $paths[] = $path;
+            } catch (\InvalidArgumentException $e) {
+                $msg = $e->getMessage();
+                if (str_contains($msg, 'already a directory')) {
+                    return new JsonResponse(['error' => 'Cannot write to a path that is already a directory'], Response::HTTP_CONFLICT);
+                }
+                if (str_contains($msg, 'already exists')) {
+                    return new JsonResponse(['error' => $msg], Response::HTTP_CONFLICT);
+                }
+                return new JsonResponse(['error' => $msg], Response::HTTP_BAD_REQUEST);
+            }
         }
 
         return new JsonResponse([
@@ -109,11 +156,12 @@ final class FileStorageController
     #[Route('/rename', name: 'keyboardman_filesystem_rename', methods: ['POST'])]
     public function rename(Request $request): JsonResponse
     {
-        $filesystem = $request->request->getString('filesystem', 'default');
-        $source = $request->request->getString('source', '');
-        $target = $request->request->getString('target', '');
+        $payload = $this->getRequestPayload($request);
+        $filesystem = $payload['filesystem'] ?? $request->request->getString('filesystem', 'default');
+        $source = $payload['source'] ?? $request->request->getString('source', '');
+        $target = $payload['target'] ?? $request->request->getString('target', '');
 
-        if ($source === '' || $target === '') {
+        if (!\is_string($source) || trim($source) === '' || !\is_string($target) || trim($target) === '') {
             return new JsonResponse(['error' => 'source and target are required'], Response::HTTP_BAD_REQUEST);
         }
         if (!$this->fileStorage->hasFilesystem($filesystem)) {
@@ -138,11 +186,12 @@ final class FileStorageController
     #[Route('/move', name: 'keyboardman_filesystem_move', methods: ['POST'])]
     public function move(Request $request): JsonResponse
     {
-        $filesystem = $request->request->getString('filesystem', 'default');
-        $source = $request->request->getString('source', '');
-        $target = $request->request->getString('target', '');
+        $payload = $this->getRequestPayload($request);
+        $filesystem = $payload['filesystem'] ?? $request->request->getString('filesystem', 'default');
+        $source = $payload['source'] ?? $request->request->getString('source', '');
+        $target = $payload['target'] ?? $request->request->getString('target', '');
 
-        if ($source === '' || $target === '') {
+        if (!\is_string($source) || trim($source) === '' || !\is_string($target) || trim($target) === '') {
             return new JsonResponse(['error' => 'source and target are required'], Response::HTTP_BAD_REQUEST);
         }
         if (!$this->fileStorage->hasFilesystem($filesystem)) {
@@ -166,8 +215,13 @@ final class FileStorageController
     #[Route('/create-directory', name: 'keyboardman_filesystem_create_directory', methods: ['POST'])]
     public function createDirectory(Request $request): JsonResponse
     {
-        $filesystem = $request->request->getString('filesystem', 'default');
-        $path = $request->request->getString('path', '');
+        $payload = $this->getRequestPayload($request);
+        $filesystem = $payload['filesystem'] ?? $request->request->getString('filesystem', 'default');
+        $path = $payload['path'] ?? $request->request->getString('path', '');
+
+        if (!\is_string($path) || trim($path) === '') {
+            return new JsonResponse(['error' => 'path is required'], Response::HTTP_BAD_REQUEST);
+        }
 
         if (!$this->fileStorage->hasFilesystem($filesystem)) {
             return new JsonResponse(['error' => 'Unknown filesystem'], Response::HTTP_BAD_REQUEST);
@@ -202,12 +256,18 @@ final class FileStorageController
             return new JsonResponse(['error' => 'Unknown filesystem'], Response::HTTP_BAD_REQUEST);
         }
 
+        $normalizedPath = trim($path, '/');
         try {
-            $this->fileStorage->delete($filesystem, $path);
+            $this->fileStorage->delete($filesystem, $normalizedPath);
         } catch (\InvalidArgumentException $e) {
             $msg = $e->getMessage();
             if ($msg === 'File or directory not found.') {
-                return new JsonResponse(['error' => 'File or directory not found'], Response::HTTP_NOT_FOUND);
+                // Suppression idempotente : déjà supprimé = succès (évite erreur sur double-clic / double requête)
+                return new JsonResponse([
+                    'deleted' => true,
+                    'filesystem' => $filesystem,
+                    'path' => $normalizedPath,
+                ], Response::HTTP_OK);
             }
             if ($msg === 'Directory is not empty.') {
                 return new JsonResponse(['error' => 'Directory is not empty'], Response::HTTP_CONFLICT);
@@ -215,7 +275,11 @@ final class FileStorageController
             return new JsonResponse(['error' => $msg], Response::HTTP_BAD_REQUEST);
         }
 
-        return new JsonResponse(null, Response::HTTP_NO_CONTENT);
+        return new JsonResponse([
+            'deleted' => true,
+            'filesystem' => $filesystem,
+            'path' => $normalizedPath,
+        ], Response::HTTP_OK);
     }
 
     #[Route('/list', name: 'keyboardman_filesystem_list', methods: ['GET'])]

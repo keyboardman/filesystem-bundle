@@ -1,0 +1,19 @@
+services:
+    # Service pour résoudre le chemin de stockage depuis la variable d'environnement ou utiliser la valeur par défaut
+    App\DependencyInjection\StoragePathResolver:
+        autowire: true
+    
+    demo.storage_path:
+        class: string
+        factory: ['@App\DependencyInjection\StoragePathResolver', 'resolve']
+    
+    demo.flysystem_adapter.default:
+        class: League\Flysystem\Local\LocalFilesystemAdapter
+        arguments:
+            - '@demo.storage_path'
+
+    App\DependencyInjection\EnvVarProcessor:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+        tags:
+            - { name: container.env_var_processor }
