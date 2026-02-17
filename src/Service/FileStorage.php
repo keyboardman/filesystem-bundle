@@ -7,6 +7,7 @@ namespace Keyboardman\FilesystemBundle\Service;
 use Keyboardman\FilesystemBundle\Flysystem\FilesystemMap;
 use League\Flysystem\DirectoryAttributes;
 use League\Flysystem\FileAttributes;
+use League\Flysystem\FilesystemOperator;
 use League\Flysystem\StorageAttributes;
 
 final class FileStorage
@@ -34,6 +35,7 @@ final class FileStorage
     public function write(string $filesystem, string $key, string $content, bool $overwrite = false): int
     {
         $fs = $this->filesystemMap->get($filesystem);
+        $this->ensureParentDirectory($fs, $key);
         $fs->write($key, $content);
 
         return \strlen($content);
@@ -121,6 +123,7 @@ final class FileStorage
         }
 
         $fs = $this->filesystemMap->get($filesystem);
+        $this->ensureParentDirectory($fs, $placeholderKey);
         $fs->write($placeholderKey, '');
     }
 
@@ -254,5 +257,41 @@ final class FileStorage
     {
         $ext = strtolower(pathinfo($key, \PATHINFO_EXTENSION));
         return $ext !== '' && \in_array($ext, $extensions, true);
+    }
+
+    /**
+     * S'assure que le répertoire parent du chemin donné existe.
+     * Crée récursivement tous les répertoires parents nécessaires.
+     *
+     * @param FilesystemOperator $fs instance de FilesystemOperator
+     * @param string             $path chemin du fichier ou répertoire
+     */
+    private function ensureParentDirectory(FilesystemOperator $fs, string $path): void
+    {
+        $parentPath = \dirname($path);
+        if ($parentPath === '.' || $parentPath === '') {
+            return; // Pas de répertoire parent (racine)
+        }
+
+        // Normaliser le chemin parent (enlever les slashes finaux)
+        $parentPath = rtrim($parentPath, '/');
+
+        // Vérifier si le répertoire parent existe déjà
+        if ($fs->directoryExists($parentPath)) {
+            return;
+        }
+
+        // Créer récursivement les répertoires parents
+        $parts = explode('/', $parentPath);
+        $currentPath = '';
+        foreach ($parts as $part) {
+            if ($part === '') {
+                continue;
+            }
+            $currentPath = $currentPath === '' ? $part : $currentPath . '/' . $part;
+            if (!$fs->directoryExists($currentPath)) {
+                $fs->createDirectory($currentPath);
+            }
+        }
     }
 }
