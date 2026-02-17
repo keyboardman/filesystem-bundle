@@ -15,9 +15,9 @@ php -S localhost:8000 -t public
 # ou : symfony server:start
 ```
 
-Puis ouvrir :
+Puis tester les endpoints de l'API :
 
-- **Page démo** : http://localhost:8000/api/filesystem/demo (formulaires upload, list, delete, etc.)
 - **API list** : http://localhost:8000/api/filesystem/list?filesystem=default
+- **Autres endpoints** : upload, rename, move, delete, create-directory (voir la documentation du bundle)
 
 Le stockage par défaut utilise un répertoire local : `var/storage/`.

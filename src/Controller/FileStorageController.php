@@ -119,15 +119,20 @@ final class FileStorageController
         if (!$this->fileStorage->hasFilesystem($filesystem)) {
             return new JsonResponse(['error' => 'Unknown filesystem'], Response::HTTP_BAD_REQUEST);
         }
-        if (!$this->fileStorage->has($filesystem, $source)) {
-            return new JsonResponse(['error' => 'File not found'], Response::HTTP_NOT_FOUND);
+        if (!$this->fileStorage->pathExists($filesystem, $source)) {
+            return new JsonResponse(['error' => 'File or directory not found'], Response::HTTP_NOT_FOUND);
         }
-        if ($this->fileStorage->has($filesystem, $target)) {
+        if ($this->fileStorage->pathExists($filesystem, $target)) {
             return new JsonResponse(['error' => 'Target already exists'], Response::HTTP_CONFLICT);
         }
 
-        $this->fileStorage->rename($filesystem, $source, $target);
-        return new JsonResponse(['filesystem' => $filesystem, 'path' => $target], Response::HTTP_OK);
+        try {
+            $this->fileStorage->rename($filesystem, $source, $target);
+        } catch (\InvalidArgumentException $e) {
+            return new JsonResponse(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
+        }
+
+        return new JsonResponse(['filesystem' => $filesystem, 'path' => trim($target, '/')], Response::HTTP_OK);
     }
 
     #[Route('/move', name: 'keyboardman_filesystem_move', methods: ['POST'])]
@@ -143,14 +148,18 @@ final class FileStorageController
         if (!$this->fileStorage->hasFilesystem($filesystem)) {
             return new JsonResponse(['error' => 'Unknown filesystem'], Response::HTTP_BAD_REQUEST);
         }
-        if (!$this->fileStorage->has($filesystem, $source)) {
-            return new JsonResponse(['error' => 'File not found'], Response::HTTP_NOT_FOUND);
+        if (!$this->fileStorage->pathExists($filesystem, $source)) {
+            return new JsonResponse(['error' => 'File or directory not found'], Response::HTTP_NOT_FOUND);
         }
-        if ($this->fileStorage->has($filesystem, $target)) {
+        if ($this->fileStorage->pathExists($filesystem, $target)) {
             return new JsonResponse(['error' => 'Target already exists'], Response::HTTP_CONFLICT);
         }
 
-        $this->fileStorage->rename($filesystem, $source, $target);
+        try {
+            $this->fileStorage->rename($filesystem, $source, $target);
+        } catch (\InvalidArgumentException $e) {
+            return new JsonResponse(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
+        }
         return new JsonResponse(['filesystem' => $filesystem, 'path' => $target], Response::HTTP_OK);
     }
 

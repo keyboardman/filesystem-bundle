@@ -55,10 +55,100 @@ final class FileStorage
         return $fs->has($key);
     }
 
+    /**
+     * Renomme ou déplace un fichier ou un répertoire (créé via createDirectory).
+     * Pour un répertoire, déplace récursivement tout son contenu vers la cible.
+     *
+     * @throws \InvalidArgumentException si chemin vide, contient '..', ou cible sous la source
+     */
     public function rename(string $filesystem, string $sourceKey, string $targetKey): void
     {
+        $sourceKey = trim($sourceKey, '/');
+        $targetKey = trim($targetKey, '/');
+        if ($sourceKey === '' || $targetKey === '') {
+            throw new \InvalidArgumentException('Source and target paths cannot be empty.');
+        }
+        if (str_contains($sourceKey, '..') || str_contains($targetKey, '..')) {
+            throw new \InvalidArgumentException('Paths cannot contain "..".');
+        }
+
         $fs = $this->filesystemMap->get($filesystem);
+
+        $sourceKeepKey = $sourceKey . '/.keep';
+        if ($this->has($filesystem, $sourceKeepKey)) {
+            $this->renameDirectory($fs, $filesystem, $sourceKey, $targetKey);
+
+            return;
+        }
+
         $fs->move($sourceKey, $targetKey);
+    }
+
+    /**
+     * Retourne true si le chemin désigne un répertoire (présence de path/.keep).
+     */
+    public function isDirectory(string $filesystem, string $path): bool
+    {
+        $path = trim($path, '/');
+        if ($path === '') {
+            return false;
+        }
+
+        return $this->has($filesystem, $path . '/.keep');
+    }
+
+    /**
+     * Retourne true si le chemin existe comme fichier ou comme répertoire (path/.keep).
+     */
+    public function pathExists(string $filesystem, string $path): bool
+    {
+        $path = trim($path, '/');
+        if ($path === '') {
+            return false;
+        }
+
+        return $this->has($filesystem, $path) || $this->has($filesystem, $path . '/.keep');
+    }
+
+    /**
+     * Renomme un répertoire : déplace récursivement tout le contenu (fichiers et sous-répertoires).
+     */
+    private function renameDirectory(FilesystemOperator $fs, string $filesystem, string $sourceKey, string $targetKey): void
+    {
+        if ($targetKey === $sourceKey) {
+            return;
+        }
+        $prefix = $sourceKey . '/';
+        if (str_starts_with($targetKey . '/', $prefix)) {
+            throw new \InvalidArgumentException('Target path cannot be inside source directory.');
+        }
+
+        $allPaths = $this->listAllKeysRecursively($fs, $sourceKey);
+        usort($allPaths, fn (string $a, string $b): int => substr_count($a, '/') <=> substr_count($b, '/'));
+
+        foreach ($allPaths as $path) {
+            $suffix = substr($path, \strlen($sourceKey));
+            $targetPath = $targetKey . $suffix;
+            $this->ensureParentDirectory($fs, $targetPath);
+            $fs->move($path, $targetPath);
+        }
+    }
+
+    /**
+     * @return list<string> toutes les clés de fichiers sous le préfixe (récursif). Les répertoires (convention .keep) sont représentés par leur fichier .keep.
+     */
+    private function listAllKeysRecursively(FilesystemOperator $fs, string $prefix): array
+    {
+        $prefix = trim($prefix, '/');
+        $keys = [];
+        foreach ($fs->listContents($prefix, true) as $item) {
+            \assert($item instanceof StorageAttributes);
+            if ($item instanceof FileAttributes) {
+                $keys[] = $item->path();
+            }
+        }
+
+        return $keys;
     }
 
     /**

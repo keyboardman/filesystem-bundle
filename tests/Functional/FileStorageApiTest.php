@@ -86,6 +86,110 @@ final class FileStorageApiTest extends WebTestCase
         $this->assertResponseStatusCodeSame(Response::HTTP_NOT_FOUND);
     }
 
+    public function testRenameEmptyDirectorySuccess(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $storage->createDirectory('default', 'old-dir');
+        $this->assertTrue($storage->pathExists('default', 'old-dir'));
+        $client->request('POST', '/api/filesystem/rename', [
+            'filesystem' => 'default',
+            'source' => 'old-dir',
+            'target' => 'new-dir',
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertTrue($storage->has('default', 'new-dir/.keep'));
+        $this->assertFalse($storage->has('default', 'old-dir/.keep'));
+    }
+
+    public function testRenameDirectoryWithFilesSuccess(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $storage->createDirectory('default', 'folder');
+        $storage->write('default', 'folder/a.txt', 'content a');
+        $storage->write('default', 'folder/b.txt', 'content b');
+        $client->request('POST', '/api/filesystem/rename', [
+            'filesystem' => 'default',
+            'source' => 'folder',
+            'target' => 'renamed-folder',
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertTrue($storage->has('default', 'renamed-folder/.keep'));
+        $this->assertTrue($storage->has('default', 'renamed-folder/a.txt'));
+        $this->assertTrue($storage->has('default', 'renamed-folder/b.txt'));
+        $this->assertSame('content a', $storage->read('default', 'renamed-folder/a.txt'));
+        $this->assertFalse($storage->has('default', 'folder/.keep'));
+        $this->assertFalse($storage->has('default', 'folder/a.txt'));
+    }
+
+    public function testRenameDirectoryWithSubdirectoriesSuccess(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $storage->createDirectory('default', 'parent');
+        $storage->createDirectory('default', 'parent/child');
+        $storage->write('default', 'parent/child/file.txt', 'nested');
+        $client->request('POST', '/api/filesystem/rename', [
+            'filesystem' => 'default',
+            'source' => 'parent',
+            'target' => 'parent-renamed',
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertTrue($storage->has('default', 'parent-renamed/.keep'));
+        $this->assertTrue($storage->has('default', 'parent-renamed/child/.keep'));
+        $this->assertTrue($storage->has('default', 'parent-renamed/child/file.txt'));
+        $this->assertSame('nested', $storage->read('default', 'parent-renamed/child/file.txt'));
+        $this->assertFalse($storage->has('default', 'parent/.keep'));
+        $this->assertFalse($storage->has('default', 'parent/child/.keep'));
+        $this->assertFalse($storage->has('default', 'parent/child/file.txt'));
+    }
+
+    public function testRenameDirectoryTargetExistsReturnsConflict(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $storage->createDirectory('default', 'dir-a');
+        $storage->createDirectory('default', 'dir-b');
+        $client->request('POST', '/api/filesystem/rename', [
+            'filesystem' => 'default',
+            'source' => 'dir-a',
+            'target' => 'dir-b',
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_CONFLICT);
+        $this->assertTrue($storage->has('default', 'dir-a/.keep'));
+        $this->assertTrue($storage->has('default', 'dir-b/.keep'));
+    }
+
+    public function testRenameDirectorySourceNotFoundReturnsNotFound(): void
+    {
+        $client = static::createClient();
+        $client->request('POST', '/api/filesystem/rename', [
+            'filesystem' => 'default',
+            'source' => 'nonexistent-dir',
+            'target' => 'any-dir',
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_NOT_FOUND);
+    }
+
+    public function testMoveDirectorySuccess(): void
+    {
+        $client = static::createClient();
+        $storage = $client->getContainer()->get(\Keyboardman\FilesystemBundle\Service\FileStorage::class);
+        $storage->createDirectory('default', 'move-me');
+        $storage->write('default', 'move-me/inside.txt', 'data');
+        $client->request('POST', '/api/filesystem/move', [
+            'filesystem' => 'default',
+            'source' => 'move-me',
+            'target' => 'destination/moved-dir',
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_OK);
+        $this->assertTrue($storage->has('default', 'destination/moved-dir/.keep'));
+        $this->assertTrue($storage->has('default', 'destination/moved-dir/inside.txt'));
+        $this->assertFalse($storage->has('default', 'move-me/.keep'));
+        $this->assertFalse($storage->has('default', 'move-me/inside.txt'));
+    }
+
     public function testMoveSuccess(): void
     {
         $client = static::createClient();

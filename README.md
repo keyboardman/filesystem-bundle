@@ -1,10 +1,10 @@
 # Keyboardman Filesystem Bundle
 
-Bundle Symfony réutilisable exposant une **API File Storage** (upload, renommer, déplacer, supprimer) avec [Flysystem](https://flysystem.thephpleague.com/docs/) (The PHP League). Le bundle déclare `league/flysystem` en dépendance : votre projet n’a pas besoin de l’ajouter à son `composer.json`. Support multi-filesystems.
+Bundle Symfony réutilisable exposant une **API File Storage** (upload, renommer, déplacer, supprimer) avec [Flysystem](https://flysystem.thephpleague.com/docs/) (The PHP League). Le bundle déclare `league/flysystem` en dépendance : votre projet n'a pas besoin de l'ajouter à son `composer.json`. Support multi-filesystems.
 
 ## Installation
 
-Ce bundle n’est pas publié sur Packagist. Installez-le depuis GitHub.
+Ce bundle n'est pas publié sur Packagist. Installez-le depuis GitHub.
 
 **1. Déclarez le dépôt dans le `composer.json` de votre projet :**
 
@@ -46,7 +46,7 @@ return [
 
 Chaque filesystem est **nommé** et mappé à un **adapter Flysystem** (service Symfony implémentant `League\Flysystem\FilesystemAdapter`).
 
-Exemple avec l’adapter Local (fourni par `league/flysystem`, dépendance du bundle) :
+Exemple avec l'adapter Local (fourni par `league/flysystem`, dépendance du bundle) :
 
 ```yaml
 # config/packages/keyboardman_filesystem.yaml
@@ -75,13 +75,13 @@ services:
 
 ### Exemple : Amazon S3
 
-Installez l’adapter S3 pour Flysystem :
+Installez l'adapter S3 pour Flysystem :
 
 ```bash
 composer require league/flysystem-aws-s3-v3
 ```
 
-Puis définissez le filesystem (utilisez des variables d’environnement pour les identifiants) :
+Puis définissez le filesystem (utilisez des variables d'environnement pour les identifiants) :
 
 ```yaml
 keyboardman_filesystem:
@@ -110,11 +110,11 @@ services:
 
 ### Exemple : FTP
 
-Installez l’adapter FTP : `composer require league/flysystem-ftp`. Puis définissez un service dont la classe implémente `League\Flysystem\FilesystemAdapter` (voir la [doc Flysystem](https://flysystem.thephpleague.com/docs/adapter/ftp/)).
+Installez l'adapter FTP : `composer require league/flysystem-ftp`. Puis définissez un service dont la classe implémente `League\Flysystem\FilesystemAdapter` (voir la [doc Flysystem](https://flysystem.thephpleague.com/docs/adapter/ftp/)).
 
-### Restrictions d’upload (api)
+### Restrictions d'upload (api)
 
-Par défaut, l’API n’accepte que les fichiers **audio**, **vidéo** et **image** (validation par extension), et applique une **taille maximale par fichier** (10 MiB par défaut).
+Par défaut, l'API n'accepte que les fichiers **audio**, **vidéo** et **image** (validation par extension), et applique une **taille maximale par fichier** (10 MiB par défaut).
 
 ```yaml
 keyboardman_filesystem:
@@ -125,7 +125,7 @@ keyboardman_filesystem:
 
 - **allowed_types** : types autorisés (`image`, `audio`, `video`). Extensions alignées avec le filtrage de la route list.
 - **max_upload_size** : taille max en bytes, ou en notation lisible (`10M`, `50M`, `1G`).
-- En cas de non-conformité, l’API retourne **400** avec `{"error": "File type not allowed"}` ou `{"error": "File size exceeds limit"}`.
+- En cas de non-conformité, l'API retourne **400** avec `{"error": "File type not allowed"}` ou `{"error": "File size exceeds limit"}`.
 
 ## Routes / API HTTP
 
@@ -151,10 +151,10 @@ keyboardman_filesystem_api:
 | Méthode | Chemin | Description |
 |--------|--------|-------------|
 | GET | `/api/filesystem/list` | Lister fichiers et dossiers du répertoire courant uniquement (`filesystem`, optionnel `path`, `type`, `sort`) |
-| POST | `/api/filesystem/upload` | Upload d’un fichier (`file`, `filesystem`, optionnel `key`) |
+| POST | `/api/filesystem/upload` | Upload d'un fichier (`file`, `filesystem`, optionnel `key`) |
 | POST | `/api/filesystem/upload-multiple` | Upload de plusieurs fichiers (`files[]`, `filesystem`) |
-| POST | `/api/filesystem/rename` | Renommer (`filesystem`, `source`, `target`) |
-| POST | `/api/filesystem/move` | Déplacer (`filesystem`, `source`, `target`) |
+| POST | `/api/filesystem/rename` | Renommer un fichier ou un dossier (`filesystem`, `source`, `target`) — les dossiers créés via create-directory sont déplacés avec tout leur contenu |
+| POST | `/api/filesystem/move` | Déplacer un fichier ou un dossier (`filesystem`, `source`, `target`) — idem pour les dossiers |
 | POST | `/api/filesystem/create-directory` | Créer un dossier (`filesystem`, `path`) — à la racine ou plus loin (ex. `parent/enfant`) |
 | POST | `/api/filesystem/delete` | Supprimer un fichier ou un dossier vide (`filesystem`, `path`) |
 
@@ -163,8 +163,8 @@ Réponses : JSON ; codes HTTP standards (200, 201, 204, 400, 404, 409).
 #### Route delete (POST)
 
 - **Paramètres** : `filesystem` (défaut : `default`), `path` (fichier ou dossier à supprimer).
-- Supprime un **fichier** ou un **dossier** (créé via create-directory). Un dossier n’est supprimable que s’il est **vide** (aucun fichier ni sous-dossier).
-- **204** No Content en cas de succès. **404** si fichier ou dossier introuvable. **409** Conflict si le dossier n’est pas vide (`{"error": "Directory is not empty"}`).
+- Supprime un **fichier** ou un **dossier** (créé via create-directory). Un dossier n'est supprimable que s'il est **vide** (aucun fichier ni sous-dossier).
+- **204** No Content en cas de succès. **404** si fichier ou dossier introuvable. **409** Conflict si le dossier n'est pas vide (`{"error": "Directory is not empty"}`).
 
 #### Route create-directory (POST)
 
@@ -184,13 +184,9 @@ Réponses : JSON ; codes HTTP standards (200, 201, 204, 400, 404, 409).
   - `video` : mp4, webm, avi, mov, mkv, m4v  
 - **Exemples** : `GET /api/filesystem/list?filesystem=default`, `GET /api/filesystem/list?filesystem=default&path=documents&type=image&sort=asc`
 
-### Page de démonstration
-
-Une route **GET** `/api/filesystem/demo` affiche une page HTML pour tester l’API (formulaires upload, rename, move, delete). À réserver à l’environnement de dev/démo ; protégez l’API en production (firewall, authentification).
-
 ## Sécurité
 
-En production, protégez les routes de l’API (firewall Symfony, authentification) et ne publiez pas la page démo. Le bundle ne gère pas les permissions métier.
+En production, protégez les routes de l'API (firewall Symfony, authentification). Le bundle ne gère pas les permissions métier.
 
 ## Tests
 
@@ -200,7 +196,7 @@ En production, protégez les routes de l’API (firewall Symfony, authentificati
 
 ## Docker
 
-Construire l’image (à la racine du dépôt) :
+Construire l'image (à la racine du dépôt) :
 
 ```bash
 docker build -t keyboardman/filesystem-bundle .
@@ -212,8 +208,6 @@ docker build -t keyboardman/filesystem-bundle .
 docker run --rm -p 8000:8000 keyboardman/filesystem-bundle
 ```
 
-Puis ouvrir http://localhost:8000/api/filesystem/demo dans le navigateur.
-
 **Lancer les tests** :
 
 ```bash
@@ -222,7 +216,7 @@ docker run --rm keyboardman/filesystem-bundle ./vendor/bin/phpunit
 
 ## Projet démo (demo/)
 
-Le répertoire **demo/** à la racine du dépôt contient un projet Symfony minimal qui utilise le bundle. Il permet de valider l’installation et de tester l’API sans ajouter `league/flysystem` dans le projet (le bundle fournit la dépendance).
+Le répertoire **demo/** à la racine du dépôt contient un projet Symfony minimal qui utilise le bundle. Il permet de valider l'installation et de tester l'API sans ajouter `league/flysystem` dans le projet (le bundle fournit la dépendance).
 
 **Lancer la démo :**
 
@@ -233,14 +227,14 @@ symfony server:start
 # ou : php -S localhost:8000 -t public
 ```
 
-Puis ouvrir http://localhost:8000/api/filesystem/demo pour la page de démo (upload, list, delete, etc.).
+Le projet démo expose les endpoints de l'API pour tester les fonctionnalités (upload, list, delete, etc.).
 
 ## Migration depuis Gaufrette
 
 Si vous migriez depuis une version du bundle basée sur Gaufrette :
 
 - **Configuration** : la clé `adapter` pointe désormais vers un service **Flysystem** (`League\Flysystem\FilesystemAdapter`), plus vers un adapter Gaufrette. Remplacez par exemple `Gaufrette\Adapter\Local` par `League\Flysystem\Local\LocalFilesystemAdapter`, et `Gaufrette\Adapter\InMemory` par `League\Flysystem\InMemory\InMemoryFilesystemAdapter` (package `league/flysystem-memory`).
-- **Cache** : l’option de configuration `cache` (source + cache) a été retirée. Pour un cache sur un filesystem lent, envisagez un décorateur ou une solution alignée sur [Flysystem v3](https://flysystem.thephpleague.com/docs/).
+- **Cache** : l'option de configuration `cache` (source + cache) a été retirée. Pour un cache sur un filesystem lent, envisagez un décorateur ou une solution alignée sur [Flysystem v3](https://flysystem.thephpleague.com/docs/).
 - **API HTTP et service FileStorage** : les signatures et réponses restent identiques.
 
 ## Licence
