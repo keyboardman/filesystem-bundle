@@ -219,6 +219,13 @@ final class DemoController
         <div class="storage-info">
             <strong>📂 Chemin de stockage local :</strong> <code>{$storagePath}</code>
         </div>
+        <div class="form-group" style="margin-bottom: 16px;">
+            <label for="filesystemSelect" style="margin-right: 8px;">Stockage :</label>
+            <select id="filesystemSelect" onchange="loadFileList()" style="padding: 6px 12px; border-radius: 4px; border: 1px solid #ddd;">
+                <option value="default">Local (default)</option>
+                <option value="s3">S3 (MinIO)</option>
+            </select>
+        </div>
 
         <div id="message" class="message"></div>
 
@@ -282,7 +289,10 @@ final class DemoController
 
     <script>
         const API_BASE = '/api/filesystem';
-        const FILESYSTEM = 'default';
+        function getFilesystem() {
+            const el = document.getElementById('filesystemSelect');
+            return el ? el.value : 'default';
+        }
 
         function showMessage(text, type = 'success') {
             const msg = document.getElementById('message');
@@ -335,7 +345,7 @@ final class DemoController
 
             const formData = new FormData();
             formData.append('file', file);
-            formData.append('filesystem', FILESYSTEM);
+            formData.append('filesystem', getFilesystem());
             if (pathInput.value.trim()) {
                 formData.append('key', pathInput.value.trim());
             }
@@ -386,7 +396,7 @@ final class DemoController
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        filesystem: FILESYSTEM,
+                        filesystem: getFilesystem(),
                         path: path,
                     }),
                 });
@@ -407,7 +417,7 @@ final class DemoController
             fileList.innerHTML = '<div class="loading"></div> Chargement...';
 
             try {
-                const params = new URLSearchParams({ filesystem: FILESYSTEM });
+                const params = new URLSearchParams({ filesystem: getFilesystem() });
                 if (path) params.append('path', path);
                 const filterType = document.getElementById('listFilterType');
                 if (filterType && filterType.value) {
@@ -476,7 +486,7 @@ final class DemoController
                 await apiCall('/delete', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filesystem: FILESYSTEM, path: normalizedPath }),
+                    body: JSON.stringify({ filesystem: getFilesystem(), path: normalizedPath }),
                 });
                 showMessage(`Supprimé avec succès : ${path}`);
                 if (isCurrentDir || isParentDir) {
@@ -516,7 +526,7 @@ final class DemoController
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        filesystem: FILESYSTEM,
+                        filesystem: getFilesystem(),
                         source: oldPath,
                         target: targetPath,
                     }),

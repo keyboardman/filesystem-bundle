@@ -5,3 +5,5 @@ keyboardman_filesystem:
     filesystems:
         default:
             adapter: demo.flysystem_adapter.default
+        s3:
+            adapter: demo.flysystem_adapter.s3

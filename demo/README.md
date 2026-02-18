@@ -63,3 +63,18 @@ Vous pouvez aussi tester directement les endpoints de l'API :
 - **Autres endpoints** : upload, rename, move, delete, create-directory (voir la documentation du bundle)
 
 Le stockage par défaut utilise un répertoire local : `var/storage/`.
+
+## Tester S3 (MinIO) en plus du local
+
+À la racine du bundle, un `docker-compose.yml` lance MinIO (stockage S3-compatible). Vous pouvez ainsi tester **Local** et **S3** depuis la même page démo.
+
+1. **Démarrer MinIO** (à la racine du bundle) :
+   ```bash
+   docker compose up -d
+   ```
+   - API S3 : http://localhost:9000  
+   - Console MinIO : http://localhost:9001 (minioadmin / minioadmin)
+
+2. **Configurer la démo** : les variables `MINIO_*` sont déjà dans `demo/.env`. Ajustez si besoin (endpoint, identifiants, bucket).
+
+3. **Lancer la démo** depuis `demo/` puis ouvrir http://localhost:8000/. Dans le sélecteur **Stockage**, choisir **Local (default)** ou **S3 (MinIO)** pour comparer les deux.

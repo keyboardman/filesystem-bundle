@@ -2,15 +2,33 @@ services:
     # Service pour résoudre le chemin de stockage depuis la variable d'environnement ou utiliser la valeur par défaut
     App\DependencyInjection\StoragePathResolver:
         autowire: true
-    
+
     demo.storage_path:
         class: string
         factory: ['@App\DependencyInjection\StoragePathResolver', 'resolve']
-    
+
     demo.flysystem_adapter.default:
         class: League\Flysystem\Local\LocalFilesystemAdapter
         arguments:
             - '@demo.storage_path'
+
+    # MinIO / S3 (voir .env MINIO_* et docker-compose à la racine du bundle)
+    demo.s3_client:
+        class: Aws\S3\S3Client
+        arguments:
+            - endpoint: '%env(MINIO_ENDPOINT)%'
+              use_path_style_endpoint: true
+              region: '%env(MINIO_REGION)%'
+              credentials:
+                key: '%env(MINIO_ACCESS_KEY)%'
+                secret: '%env(MINIO_SECRET_KEY)%'
+              version: 'latest'
+
+    demo.flysystem_adapter.s3:
+        class: League\Flysystem\AwsS3V3\AwsS3V3Adapter
+        arguments:
+            - '@demo.s3_client'
+            - '%env(MINIO_BUCKET)%'
 
     App\DependencyInjection\EnvVarProcessor:
         arguments:
